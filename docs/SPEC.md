@@ -77,7 +77,9 @@ SDK 仅支持**只读查询**，任何包含写操作的语句将抛出异常。
 
 | 类型 | 说明 | 适配器 |
 |------|------|--------|
-| TuGraph | 图数据库 | TuGraphAdapter |
+| TuGraph | 图数据库 | 用户实现 `DataSourceAdapter` 接口 |
+
+> **注意**: SDK 仅提供 `DataSourceAdapter` 接口定义，具体的数据源适配器（如 TuGraphAdapter）由用户根据实际需求实现。单元测试中使用 `MockExternalAdapter` 模拟所有数据源行为。
 
 ### 3.2 外部数据源
 
@@ -86,6 +88,8 @@ SDK 仅支持**只读查询**，任何包含写操作的语句将抛出异常。
 | REST API | HTTP 服务 | RESTful API |
 | gRPC | RPC 服务 | Protocol Buffers |
 | 自定义 | 用户定义 | DataSourceAdapter 接口 |
+
+> **注意**: 外部数据源适配器同样由用户实现 `DataSourceAdapter` 接口，单元测试中使用 `MockExternalAdapter` 模拟。
 
 ## 4. 元数据定义
 
@@ -283,8 +287,13 @@ sdk.execute("MATCH (n:NetworkElement {name: $name}) RETURN n", params);
 ### 11.2 端到端测试
 
 - 覆盖所有支持的查询场景
-- 使用 Mock 适配器模拟外部服务
+- **所有数据源必须使用 Mock**：
+  - TuGraph（物理图数据库）通过 `MockExternalAdapter` 模拟
+  - 外部服务（REST API、gRPC 等）通过 `MockExternalAdapter` 模拟
+  - 禁止在测试中连接真实数据库或外部服务
+- `MockExternalAdapter` 位置：`src/test/java/.../adapter/MockExternalAdapter.java`
 - 验证返回格式的正确性
+- 遵循 UT 强制精确校验规范（见 AGENTS.md）
 
 ## 12. 变更日志
 

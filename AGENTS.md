@@ -13,7 +13,7 @@ Java 17 Maven single-module SDK. Federated Cypher query engine: parses Cypher vi
 
 ```bash
 mvn compile    # MUST run first — generates ANTLR sources into target/generated-sources/
-mvn test       # 37 tests across 5 classes (ParserTest, RewriterTest, ExecutorTest, AggregatorTest, E2ETest)
+mvn test       # 52 tests across 5 classes (ParserTest, RewriterTest, ExecutorTest, AggregatorTest, E2ETest)
 mvn package    # Build JAR
 mvn install    # Install to local repo
 ```
@@ -56,9 +56,31 @@ Cypher → CypherParserFacade (ANTLR4 + Caffeine cache) → AST (Program)
 
 ## Testing
 
-- **All tests use mocks** — `MockExternalAdapter` simulates TuGraph and external services. No real services required.
-- Test setup pattern: create `MetadataRegistryImpl` → register data sources + virtual edges + labels → register mock adapters on `FederatedExecutor` → wire all components into `GraphQuerySDK`.
-- E2ETest (`src/test/java/.../e2e/E2ETest.java`) covers all 5 query scenarios with full pipeline.
+### Mock Data Sources
+
+**ALL data sources are mocked in unit tests**, including:
+- **TuGraph** (physical graph database)
+- **External services** (REST API, gRPC, custom adapters)
+
+The `MockExternalAdapter` (`src/test/java/.../adapter/MockExternalAdapter.java`) simulates all data source behaviors:
+- Supports configurable responses per operator
+- Simulates delays and errors for reliability testing
+- No real database or external service connections required
+
+### Test Setup Pattern
+
+1. Create `MetadataRegistryImpl`
+2. Register data sources + virtual edges + labels
+3. Register mock adapters on `FederatedExecutor`
+4. Wire all components into `GraphQuerySDK`
+
+### Test Coverage
+
+- `E2ETest` — 5 query scenarios with full pipeline
+- `ParserTest` — ANTLR4 parsing
+- `RewriterTest` — Query rewriting
+- `ExecutorTest` — Federated execution
+- `AggregatorTest` — Result aggregation
 
 ### UT Strict Validation Requirements
 
@@ -121,10 +143,11 @@ src/main/java/.../grammar/     Generated ANTLR lexer/parser (after mvn compile)
 src/main/java/.../parser/      CypherParserFacade, CypherASTVisitor
 src/main/java/.../rewriter/    QueryRewriter, VirtualEdgeDetector
 src/main/java/.../plan/        ExecutionPlan, PhysicalQuery, ExternalQuery, UnionPart
-src/main/java/.../executor/    FederatedExecutor, BatchingStrategy, ResultStitcher
-src/main/java/.../aggregator/  ResultStitcher, GlobalSorter, UnionDeduplicator, PathBuilder
+src/main/java/.../executor/    FederatedExecutor, BatchingStrategy, ResultStitcher, GlobalSorter, UnionDeduplicator, StitchedResult, PathBuilder
+src/main/java/.../aggregator/  ResultStitcher, GlobalSorter, UnionDeduplicator, PathBuilder, StitchedResult (duplicates of executor/ — SDK uses aggregator/ versions)
+src/main/java/.../reliability/  WhereConditionPushdown (used by QueryRewriter)
 src/main/java/.../metadata/    MetadataRegistry, VirtualEdgeBinding, LabelMetadata
-src/main/java/.../adapter/     DataSourceAdapter interface, TuGraphAdapter, GraphEntity
+src/main/java/.../adapter/     DataSourceAdapter interface, GraphEntity (no production TuGraph adapter — use MockExternalAdapter in tests)
 src/main/java/.../sdk/         GraphQuerySDK (public entry point)
 ```
 
@@ -132,3 +155,11 @@ src/main/java/.../sdk/         GraphQuerySDK (public entry point)
 
 - `docs/SPEC.md` — Full SDK spec with constraints, return formats, extension mechanisms
 - `图联邦查询引擎思路.md` — Design doc with query examples and architecture rationale
+- `docs/todo/optimization-items.md` — Known issues and planned improvements
+
+## Known Issues (as of 2026-04-07)
+
+- **No production TuGraph adapter**: `TuGraphAdapter` was removed; only `MockExternalAdapter` exists for tests. Physical queries will fail with "No TuGraph adapter registered".
+- **Duplicate classes**: `executor/` and `aggregator/` each contain their own copies of UnionDeduplicator, GlobalSorter, ResultStitcher, StitchedResult, PathBuilder. SDK uses aggregator/ versions.
+- **UNION deduplication not wired**: `UnionDeduplicator` is injected but never called — `UNION DISTINCT` may return duplicates.
+- **DataSourceType enum typo**: `TUGRAH_BOLT` should be `TUGRAPH_BOLT`.
