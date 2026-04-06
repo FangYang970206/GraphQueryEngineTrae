@@ -227,27 +227,6 @@ public class GraphQuerySDK {
         return results;
     }
     
-    private List<Map<String, Object>> buildPathResults(String pathVarName, Map<String, List<GraphEntity>> entitiesByVarName, Program ast) {
-        List<Map<String, Object>> results = new ArrayList<>();
-        
-        List<PathInfo> pathInfos = extractPathInfo(ast, pathVarName);
-        
-        if (pathInfos.isEmpty()) {
-            return results;
-        }
-        
-        for (PathInfo pathInfo : pathInfos) {
-            Map<String, Object> pathMap = buildPathMap(pathInfo, entitiesByVarName);
-            if (pathMap != null && !pathMap.isEmpty()) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put(pathVarName, pathMap);
-                results.add(row);
-            }
-        }
-        
-        return results;
-    }
-    
     private List<PathInfo> extractPathInfo(Program ast, String pathVarName) {
         List<PathInfo> pathInfos = new ArrayList<>();
         
@@ -272,51 +251,98 @@ public class GraphQuerySDK {
         return pathInfos;
     }
     
-    private Map<String, Object> buildPathMap(PathInfo pathInfo, Map<String, List<GraphEntity>> entitiesByVarName) {
-        Map<String, Object> pathMap = new LinkedHashMap<>();
+    private List<Map<String, Object>> buildPathResults(String pathVarName, Map<String, List<GraphEntity>> entitiesByVarName, Program ast) {
+        List<Map<String, Object>> results = new ArrayList<>();
         
-        List<Map<String, Object>> nodes = new ArrayList<>();
-        List<Map<String, Object>> relationships = new ArrayList<>();
+        List<PathInfo> pathInfos = extractPathInfo(ast, pathVarName);
         
-        if (pathInfo.patternElement != null) {
-            NodePattern startNode = pathInfo.patternElement.getNodePattern();
-            String startVar = startNode != null ? startNode.getVariable() : null;
-            log.debug("Start node variable: {}, available entities: {}", startVar, entitiesByVarName.keySet());
-            
-            if (startNode != null && startNode.getVariable() != null) {
-                List<GraphEntity> startEntities = entitiesByVarName.get(startNode.getVariable());
-                if (startEntities != null && !startEntities.isEmpty()) {
-                    nodes.add(entityToTuGraphFormat(startEntities.get(0)));
+        if (pathInfos.isEmpty()) {
+            return results;
+        }
+        
+        List<List<Map<String, Object>>> allPaths = new ArrayList<>();
+        
+        for (PathInfo pathInfo : pathInfos) {
+            List<Map<String, Object>> pathElements = buildPathElementsList(pathInfo, entitiesByVarName);
+            if (pathElements != null && !pathElements.isEmpty()) {
+                allPaths.add(pathElements);
+            }
+        }
+        
+        if (!allPaths.isEmpty()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("paths", allPaths);
+            results.add(row);
+        }
+        
+        return results;
+    }
+    
+    private List<Map<String, Object>> buildPathElementsList(PathInfo pathInfo, Map<String, List<GraphEntity>> entitiesByVarName) {
+        List<Map<String, Object>> pathElements = new ArrayList<>();
+        
+        if (pathInfo.patternElement == null) {
+            return pathElements;
+        }
+        
+        NodePattern startNode = pathInfo.patternElement.getNodePattern();
+        String startVar = startNode != null ? startNode.getVariable() : null;
+        log.debug("Start node variable: {}, available entities: {}", startVar, entitiesByVarName.keySet());
+        
+        if (startNode != null && startNode.getVariable() != null) {
+            List<GraphEntity> startEntities = entitiesByVarName.get(startNode.getVariable());
+            if (startEntities != null && !startEntities.isEmpty()) {
+                pathElements.add(buildNodeElement(startEntities.get(0)));
+            }
+        }
+        
+        for (Pattern.PatternElementChain chain : pathInfo.patternElement.getChains()) {
+            RelationshipPattern relPattern = chain.getRelationshipPattern();
+            if (relPattern != null && relPattern.getRelationshipTypes() != null) {
+                for (String relType : relPattern.getRelationshipTypes()) {
+                    pathElements.add(buildEdgeElement(relType));
                 }
             }
             
-            for (Pattern.PatternElementChain chain : pathInfo.patternElement.getChains()) {
-                RelationshipPattern relPattern = chain.getRelationshipPattern();
-                if (relPattern != null && relPattern.getRelationshipTypes() != null) {
-                    for (String relType : relPattern.getRelationshipTypes()) {
-                        Map<String, Object> relMap = new LinkedHashMap<>();
-                        relMap.put("type", relType);
-                        relationships.add(relMap);
-                    }
-                }
-                
-                NodePattern endNode = chain.getNodePattern();
-                String endVar = endNode != null ? endNode.getVariable() : null;
-                log.debug("End node variable: {}", endVar);
-                
-                if (endNode != null && endNode.getVariable() != null) {
-                    List<GraphEntity> endEntities = entitiesByVarName.get(endNode.getVariable());
-                    if (endEntities != null && !endEntities.isEmpty()) {
-                        nodes.add(entityToTuGraphFormat(endEntities.get(0)));
-                    }
+            NodePattern endNode = chain.getNodePattern();
+            String endVar = endNode != null ? endNode.getVariable() : null;
+            log.debug("End node variable: {}", endVar);
+            
+            if (endNode != null && endNode.getVariable() != null) {
+                List<GraphEntity> endEntities = entitiesByVarName.get(endNode.getVariable());
+                if (endEntities != null && !endEntities.isEmpty()) {
+                    pathElements.add(buildNodeElement(endEntities.get(0)));
                 }
             }
         }
         
-        pathMap.put("nodes", nodes);
-        pathMap.put("relationships", relationships);
+        return pathElements;
+    }
+    
+    private Map<String, Object> buildNodeElement(GraphEntity entity) {
+        Map<String, Object> element = new LinkedHashMap<>();
+        element.put("type", "node");
+        element.put("label", entity.getLabel() != null ? entity.getLabel() : "Unknown");
         
-        return pathMap;
+        Map<String, Object> props = new LinkedHashMap<>();
+        if (entity.getProperties() != null) {
+            props.putAll(entity.getProperties());
+        }
+        if (entity.getId() != null && !props.containsKey("id")) {
+            props.put("id", entity.getId());
+        }
+        element.put("props", props);
+        
+        return element;
+    }
+    
+    private Map<String, Object> buildEdgeElement(String edgeType) {
+        Map<String, Object> element = new LinkedHashMap<>();
+        element.put("type", "edge");
+        element.put("label", edgeType);
+        element.put("props", new LinkedHashMap<>());
+        
+        return element;
     }
     
     private static class PathInfo {

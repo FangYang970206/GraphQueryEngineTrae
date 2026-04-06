@@ -211,23 +211,21 @@ class E2ETest {
         GraphEntity ltpEntity = createLTPEntity("ltp1", "LTP1", "Port");
         ltpEntity.setVariableName("ltp");
         
-        GraphEntity targetEntity = createKPIEntity("kpi1", "bandwidth", 1000.0);
-        targetEntity.setVariableName("target");
+        GraphEntity kpiEntity = createKPIEntity("kpi1", "cpu_usage", 85.5);
+        kpiEntity.setVariableName("target");
         
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
                 .addEntity(neEntity)
                 .addEntity(ltpEntity)
-                .addEntity(targetEntity));
+                .addEntity(kpiEntity));
         
         kpiAdapter.registerResponse("getKPI2ByLtpIds", MockExternalAdapter.MockResponse.create()
-                .addEntity(targetEntity));
+                .addEntity(kpiEntity));
         
         kpiAdapter.registerResponse("getKPIByNeIds", MockExternalAdapter.MockResponse.create()
-                .addEntity(targetEntity));
+                .addEntity(kpiEntity));
         
-        String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN p " +
-                       "UNION " +
-                       "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps|NEHasKPI]->(target) RETURN p";
+        String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN p";
         
         String result = sdk.executeRaw(cypher);
         
@@ -238,21 +236,39 @@ class E2ETest {
         assertTrue(json.isArray(), "结果必须是数组");
         assertTrue(json.size() > 0, "结果数组不能为空");
         
-        for (int i = 0; i < json.size(); i++) {
-            JsonNode row = json.get(i);
-            assertTrue(row.isObject(), "每行必须是对象");
-            assertTrue(row.has("p"), "每行必须有p字段");
-            
-            JsonNode pathNode = row.get("p");
-            assertTrue(pathNode.has("nodes"), "path必须有nodes字段");
-            assertTrue(pathNode.has("relationships"), "path必须有relationships字段");
-            
-            JsonNode nodes = pathNode.get("nodes");
-            assertTrue(nodes.isArray(), "nodes必须是数组");
-            
-            JsonNode rels = pathNode.get("relationships");
-            assertTrue(rels.isArray(), "relationships必须是数组");
-        }
+        JsonNode firstRow = json.get(0);
+        assertTrue(firstRow.has("paths"), "每行必须有paths字段");
+        
+        JsonNode paths = firstRow.get("paths");
+        assertTrue(paths.isArray(), "paths必须是数组");
+        assertTrue(paths.size() > 0, "paths数组不能为空");
+        
+        JsonNode firstPath = paths.get(0);
+        assertTrue(firstPath.isArray(), "每个path必须是数组");
+        assertTrue(firstPath.size() >= 5, "路径至少应该有5个元素(3个节点+2个边)");
+        
+        JsonNode firstNode = firstPath.get(0);
+        assertEquals("node", firstNode.get("type").asText(), "第一个元素必须是node");
+        assertEquals("NetworkElement", firstNode.get("label").asText(), "第一个节点label必须是NetworkElement");
+        JsonNode firstNodeProps = firstNode.get("props");
+        assertTrue(firstNodeProps.has("name"), "第一个节点必须有name属性");
+        assertEquals("NE001", firstNodeProps.get("name").asText(), "name必须是NE001");
+        
+        JsonNode firstEdge = firstPath.get(1);
+        assertEquals("edge", firstEdge.get("type").asText(), "第二个元素必须是edge");
+        assertEquals("NEHasLtps", firstEdge.get("label").asText(), "第一条边label必须是NEHasLtps");
+        
+        JsonNode secondNode = firstPath.get(2);
+        assertEquals("node", secondNode.get("type").asText(), "第三个元素必须是node");
+        assertEquals("LTP", secondNode.get("label").asText(), "第二个节点label必须是LTP");
+        
+        JsonNode secondEdge = firstPath.get(3);
+        assertEquals("edge", secondEdge.get("type").asText(), "第四个元素必须是edge");
+        assertEquals("LTPHasKPI2", secondEdge.get("label").asText(), "第二条边label必须是LTPHasKPI2");
+        
+        JsonNode thirdNode = firstPath.get(4);
+        assertEquals("node", thirdNode.get("type").asText(), "第五个元素必须是node");
+        assertEquals("KPI", thirdNode.get("label").asText(), "第三个节点label必须是KPI");
     }
     
     @Test
@@ -273,7 +289,8 @@ class E2ETest {
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
                 .addEntity(personEntity)
                 .addEntity(person1Entity)
-                .addEntity(person2Entity));
+                .addEntity(person2Entity)
+                .addEntity(cardEntity));
         
         cardAdapter.registerResponse("getCardsByPersonIds", MockExternalAdapter.MockResponse.create()
                 .addEntity(cardEntity));
@@ -290,19 +307,47 @@ class E2ETest {
         assertTrue(json.isArray(), "结果必须是数组");
         assertTrue(json.size() > 0, "结果数组不能为空");
         
-        for (int i = 0; i < json.size(); i++) {
-            JsonNode row = json.get(i);
-            assertTrue(row.isObject(), "每行必须是对象");
-            assertTrue(row.has("path"), "每行必须有path字段");
-            
-            JsonNode pathNode = row.get("path");
-            assertTrue(pathNode.has("nodes"), "path必须有nodes字段");
-            assertTrue(pathNode.has("relationships"), "path必须有relationships字段");
-            
-            JsonNode nodes = pathNode.get("nodes");
-            assertTrue(nodes.isArray(), "nodes必须是数组");
-            assertTrue(nodes.size() > 0, "nodes数组不能为空");
-        }
+        JsonNode firstRow = json.get(0);
+        assertTrue(firstRow.has("paths"), "每行必须有paths字段");
+        
+        JsonNode paths = firstRow.get("paths");
+        assertTrue(paths.isArray(), "paths必须是数组");
+        assertTrue(paths.size() > 0, "paths数组不能为空");
+        
+        JsonNode firstPath = paths.get(0);
+        assertTrue(firstPath.isArray(), "每个path必须是数组");
+        assertTrue(firstPath.size() >= 7, "路径至少应该有7个元素(4个节点+3个边)");
+        
+        JsonNode firstNode = firstPath.get(0);
+        assertEquals("node", firstNode.get("type").asText(), "第一个元素必须是node");
+        assertEquals("Person", firstNode.get("label").asText(), "第一个节点label必须是Person");
+        JsonNode firstNodeProps = firstNode.get("props");
+        assertTrue(firstNodeProps.has("name"), "第一个节点必须有name属性");
+        assertEquals("Alice", firstNodeProps.get("name").asText(), "name必须是Alice");
+        
+        JsonNode firstEdge = firstPath.get(1);
+        assertEquals("edge", firstEdge.get("type").asText(), "第二个元素必须是edge");
+        assertEquals("HAS_CHILD", firstEdge.get("label").asText(), "第一条边label必须是HAS_CHILD");
+        
+        JsonNode secondNode = firstPath.get(2);
+        assertEquals("node", secondNode.get("type").asText(), "第三个元素必须是node");
+        assertEquals("Person", secondNode.get("label").asText(), "第二个节点label必须是Person");
+        
+        JsonNode secondEdge = firstPath.get(3);
+        assertEquals("edge", secondEdge.get("type").asText(), "第四个元素必须是edge");
+        assertEquals("HAS_CHILD", secondEdge.get("label").asText(), "第二条边label必须是HAS_CHILD");
+        
+        JsonNode thirdNode = firstPath.get(4);
+        assertEquals("node", thirdNode.get("type").asText(), "第五个元素必须是node");
+        assertEquals("Person", thirdNode.get("label").asText(), "第三个节点label必须是Person");
+        
+        JsonNode thirdEdge = firstPath.get(5);
+        assertEquals("edge", thirdEdge.get("type").asText(), "第六个元素必须是edge");
+        assertEquals("BORN_IN", thirdEdge.get("label").asText(), "第三条边label必须是BORN_IN");
+        
+        JsonNode fourthNode = firstPath.get(6);
+        assertEquals("node", fourthNode.get("type").asText(), "第七个元素必须是node");
+        assertEquals("Card", fourthNode.get("label").asText(), "第四个节点label必须是Card");
     }
     
     @Test
