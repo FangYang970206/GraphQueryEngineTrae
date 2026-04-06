@@ -208,10 +208,26 @@ class E2ETest {
         GraphEntity neEntity = createNEEntity("ne1", "NE001", "Router");
         neEntity.setVariableName("ne");
         
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(neEntity));
+        GraphEntity ltpEntity = createLTPEntity("ltp1", "LTP1", "Port");
+        ltpEntity.setVariableName("ltp");
         
-        String cypher = "MATCH (ne:NetworkElement) RETURN ne UNION MATCH (ne:NetworkElement) RETURN ne";
+        GraphEntity targetEntity = createKPIEntity("kpi1", "bandwidth", 1000.0);
+        targetEntity.setVariableName("target");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(neEntity)
+                .addEntity(ltpEntity)
+                .addEntity(targetEntity));
+        
+        kpiAdapter.registerResponse("getKPI2ByLtpIds", MockExternalAdapter.MockResponse.create()
+                .addEntity(targetEntity));
+        
+        kpiAdapter.registerResponse("getKPIByNeIds", MockExternalAdapter.MockResponse.create()
+                .addEntity(targetEntity));
+        
+        String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN p " +
+                       "UNION " +
+                       "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps|NEHasKPI]->(target) RETURN p";
         
         String result = sdk.executeRaw(cypher);
         
@@ -220,6 +236,23 @@ class E2ETest {
         
         JsonNode json = objectMapper.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
+        assertTrue(json.size() > 0, "结果数组不能为空");
+        
+        for (int i = 0; i < json.size(); i++) {
+            JsonNode row = json.get(i);
+            assertTrue(row.isObject(), "每行必须是对象");
+            assertTrue(row.has("p"), "每行必须有p字段");
+            
+            JsonNode pathNode = row.get("p");
+            assertTrue(pathNode.has("nodes"), "path必须有nodes字段");
+            assertTrue(pathNode.has("relationships"), "path必须有relationships字段");
+            
+            JsonNode nodes = pathNode.get("nodes");
+            assertTrue(nodes.isArray(), "nodes必须是数组");
+            
+            JsonNode rels = pathNode.get("relationships");
+            assertTrue(rels.isArray(), "relationships必须是数组");
+        }
     }
     
     @Test
@@ -228,10 +261,25 @@ class E2ETest {
         GraphEntity personEntity = createPersonEntity("p1", "Alice");
         personEntity.setVariableName("p");
         
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(personEntity));
+        GraphEntity person1Entity = createPersonEntity("p2", "Bob");
+        person1Entity.setVariableName("p1");
         
-        String cypher = "MATCH (p:Person) RETURN p";
+        GraphEntity person2Entity = createPersonEntity("p3", "Charlie");
+        person2Entity.setVariableName("p2");
+        
+        GraphEntity cardEntity = createCardEntity("card1", "Card", "card001");
+        cardEntity.setVariableName("c");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(personEntity)
+                .addEntity(person1Entity)
+                .addEntity(person2Entity));
+        
+        cardAdapter.registerResponse("getCardsByPersonIds", MockExternalAdapter.MockResponse.create()
+                .addEntity(cardEntity));
+        
+        String cypher = "MATCH path = (p:Person)-[r1:HAS_CHILD]->(p1)-[r2:HAS_CHILD]->(p2)-[r3:BORN_IN]->(c:Card) " +
+                       "RETURN path";
         
         String result = sdk.executeRaw(cypher);
         
@@ -240,6 +288,21 @@ class E2ETest {
         
         JsonNode json = objectMapper.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
+        assertTrue(json.size() > 0, "结果数组不能为空");
+        
+        for (int i = 0; i < json.size(); i++) {
+            JsonNode row = json.get(i);
+            assertTrue(row.isObject(), "每行必须是对象");
+            assertTrue(row.has("path"), "每行必须有path字段");
+            
+            JsonNode pathNode = row.get("path");
+            assertTrue(pathNode.has("nodes"), "path必须有nodes字段");
+            assertTrue(pathNode.has("relationships"), "path必须有relationships字段");
+            
+            JsonNode nodes = pathNode.get("nodes");
+            assertTrue(nodes.isArray(), "nodes必须是数组");
+            assertTrue(nodes.size() > 0, "nodes数组不能为空");
+        }
     }
     
     @Test

@@ -5,10 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.federatedquery.adapter.GraphEntity;
 import com.federatedquery.adapter.QueryResult;
 import com.federatedquery.aggregator.*;
-import com.federatedquery.ast.Program;
-import com.federatedquery.ast.ReturnClause;
-import com.federatedquery.ast.Statement;
-import com.federatedquery.ast.Variable;
+import com.federatedquery.ast.*;
 import com.federatedquery.executor.ExecutionResult;
 import com.federatedquery.parser.CypherParserFacade;
 import com.federatedquery.plan.ExecutionPlan;
@@ -127,7 +124,7 @@ public class GraphQuerySDK {
     private List<Map<String, Object>> buildTuGraphFormatResults(Program ast, ExecutionResult execResult, ExecutionResult dummy) {
         List<Map<String, Object>> results = new ArrayList<>();
         
-        List<String> returnVariables = getReturnVariables(ast);
+        List<ReturnInfo> returnInfos = getReturnInfos(ast);
         
         Map<String, List<GraphEntity>> entitiesByVarName = new LinkedHashMap<>();
         
@@ -164,7 +161,7 @@ public class GraphQuerySDK {
             }
         }
         
-        if (returnVariables.isEmpty()) {
+        if (returnInfos.isEmpty()) {
             for (List<GraphEntity> entities : entitiesByVarName.values()) {
                 for (GraphEntity entity : entities) {
                     Map<String, Object> row = new LinkedHashMap<>();
@@ -179,15 +176,27 @@ public class GraphQuerySDK {
             return results;
         }
         
-        String primaryVar = returnVariables.size() > 1 ? returnVariables.get(returnVariables.size() - 1) : returnVariables.get(0);
+        for (ReturnInfo info : returnInfos) {
+            if (info.isPath) {
+                log.debug("Building path results for variable: {}, entitiesByVarName: {}", info.variableName, entitiesByVarName.keySet());
+                List<Map<String, Object>> pathResults = buildPathResults(info.variableName, entitiesByVarName, ast);
+                results.addAll(pathResults);
+            }
+        }
+        
+        if (!results.isEmpty()) {
+            return results;
+        }
+        
+        String primaryVar = returnInfos.size() > 1 ? returnInfos.get(returnInfos.size() - 1).variableName : returnInfos.get(0).variableName;
         List<GraphEntity> primaryEntities = entitiesByVarName.getOrDefault(primaryVar, new ArrayList<>());
         
         if (primaryEntities.isEmpty()) {
             Map<String, Object> row = new LinkedHashMap<>();
-            for (String varName : returnVariables) {
-                List<GraphEntity> entities = entitiesByVarName.get(varName);
+            for (ReturnInfo info : returnInfos) {
+                List<GraphEntity> entities = entitiesByVarName.get(info.variableName);
                 if (entities != null && !entities.isEmpty()) {
-                    row.put(varName, entityToTuGraphFormat(entities.get(0)));
+                    row.put(info.variableName, entityToTuGraphFormat(entities.get(0)));
                 }
             }
             if (!row.isEmpty()) {
@@ -198,15 +207,15 @@ public class GraphQuerySDK {
         
         for (int i = 0; i < primaryEntities.size(); i++) {
             Map<String, Object> row = new LinkedHashMap<>();
-            for (String varName : returnVariables) {
-                List<GraphEntity> entities = entitiesByVarName.get(varName);
+            for (ReturnInfo info : returnInfos) {
+                List<GraphEntity> entities = entitiesByVarName.get(info.variableName);
                 if (entities != null && !entities.isEmpty()) {
-                    if (varName.equals(primaryVar)) {
+                    if (info.variableName.equals(primaryVar)) {
                         if (i < entities.size()) {
-                            row.put(varName, entityToTuGraphFormat(entities.get(i)));
+                            row.put(info.variableName, entityToTuGraphFormat(entities.get(i)));
                         }
                     } else {
-                        row.put(varName, entityToTuGraphFormat(entities.get(0)));
+                        row.put(info.variableName, entityToTuGraphFormat(entities.get(0)));
                     }
                 }
             }
@@ -216,6 +225,155 @@ public class GraphQuerySDK {
         }
         
         return results;
+    }
+    
+    private List<Map<String, Object>> buildPathResults(String pathVarName, Map<String, List<GraphEntity>> entitiesByVarName, Program ast) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        
+        List<PathInfo> pathInfos = extractPathInfo(ast, pathVarName);
+        
+        if (pathInfos.isEmpty()) {
+            return results;
+        }
+        
+        for (PathInfo pathInfo : pathInfos) {
+            Map<String, Object> pathMap = buildPathMap(pathInfo, entitiesByVarName);
+            if (pathMap != null && !pathMap.isEmpty()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put(pathVarName, pathMap);
+                results.add(row);
+            }
+        }
+        
+        return results;
+    }
+    
+    private List<PathInfo> extractPathInfo(Program ast, String pathVarName) {
+        List<PathInfo> pathInfos = new ArrayList<>();
+        
+        if (ast.getStatement() != null && ast.getStatement().getQuery() != null) {
+            for (Statement.SingleQuery sq : ast.getStatement().getQuery().getSingleQueries()) {
+                for (MatchClause match : sq.getMatchClauses()) {
+                    Pattern pattern = match.getPattern();
+                    if (pattern != null) {
+                        for (Pattern.PatternPart part : pattern.getPatternParts()) {
+                            if (pathVarName.equals(part.getVariable())) {
+                                PathInfo info = new PathInfo();
+                                info.pathVariable = pathVarName;
+                                info.patternElement = part.getPatternElement();
+                                pathInfos.add(info);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return pathInfos;
+    }
+    
+    private Map<String, Object> buildPathMap(PathInfo pathInfo, Map<String, List<GraphEntity>> entitiesByVarName) {
+        Map<String, Object> pathMap = new LinkedHashMap<>();
+        
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        List<Map<String, Object>> relationships = new ArrayList<>();
+        
+        if (pathInfo.patternElement != null) {
+            NodePattern startNode = pathInfo.patternElement.getNodePattern();
+            String startVar = startNode != null ? startNode.getVariable() : null;
+            log.debug("Start node variable: {}, available entities: {}", startVar, entitiesByVarName.keySet());
+            
+            if (startNode != null && startNode.getVariable() != null) {
+                List<GraphEntity> startEntities = entitiesByVarName.get(startNode.getVariable());
+                if (startEntities != null && !startEntities.isEmpty()) {
+                    nodes.add(entityToTuGraphFormat(startEntities.get(0)));
+                }
+            }
+            
+            for (Pattern.PatternElementChain chain : pathInfo.patternElement.getChains()) {
+                RelationshipPattern relPattern = chain.getRelationshipPattern();
+                if (relPattern != null && relPattern.getRelationshipTypes() != null) {
+                    for (String relType : relPattern.getRelationshipTypes()) {
+                        Map<String, Object> relMap = new LinkedHashMap<>();
+                        relMap.put("type", relType);
+                        relationships.add(relMap);
+                    }
+                }
+                
+                NodePattern endNode = chain.getNodePattern();
+                String endVar = endNode != null ? endNode.getVariable() : null;
+                log.debug("End node variable: {}", endVar);
+                
+                if (endNode != null && endNode.getVariable() != null) {
+                    List<GraphEntity> endEntities = entitiesByVarName.get(endNode.getVariable());
+                    if (endEntities != null && !endEntities.isEmpty()) {
+                        nodes.add(entityToTuGraphFormat(endEntities.get(0)));
+                    }
+                }
+            }
+        }
+        
+        pathMap.put("nodes", nodes);
+        pathMap.put("relationships", relationships);
+        
+        return pathMap;
+    }
+    
+    private static class PathInfo {
+        String pathVariable;
+        Pattern.PatternElement patternElement;
+    }
+    
+    private static class ReturnInfo {
+        String variableName;
+        boolean isPath;
+        
+        ReturnInfo(String name, boolean path) {
+            this.variableName = name;
+            this.isPath = path;
+        }
+    }
+    
+    private List<ReturnInfo> getReturnInfos(Program ast) {
+        List<ReturnInfo> infos = new ArrayList<>();
+        Set<String> pathVariables = getPathVariables(ast);
+        
+        if (ast.getStatement() != null && ast.getStatement().getQuery() != null) {
+            for (Statement.SingleQuery sq : ast.getStatement().getQuery().getSingleQueries()) {
+                if (sq.getReturnClause() != null) {
+                    for (ReturnClause.ReturnItem item : sq.getReturnClause().getReturnItems()) {
+                        if (item.getExpression() instanceof Variable) {
+                            String varName = ((Variable) item.getExpression()).getName();
+                            boolean isPath = pathVariables.contains(varName);
+                            infos.add(new ReturnInfo(varName, isPath));
+                        }
+                    }
+                }
+            }
+        }
+        
+        return infos;
+    }
+    
+    private Set<String> getPathVariables(Program ast) {
+        Set<String> pathVars = new HashSet<>();
+        
+        if (ast.getStatement() != null && ast.getStatement().getQuery() != null) {
+            for (Statement.SingleQuery sq : ast.getStatement().getQuery().getSingleQueries()) {
+                for (MatchClause match : sq.getMatchClauses()) {
+                    Pattern pattern = match.getPattern();
+                    if (pattern != null) {
+                        for (Pattern.PatternPart part : pattern.getPatternParts()) {
+                            if (part.getVariable() != null) {
+                                pathVars.add(part.getVariable());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return pathVars;
     }
     
     private List<String> getReturnVariables(Program ast) {
