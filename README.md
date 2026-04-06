@@ -57,6 +57,50 @@ String result = sdk.executeRaw("MATCH (n:NetworkElement) RETURN n");
 // 结果为 JSON 格式
 ```
 
+## Cypher 语法扩展
+
+本 SDK 基于 OpenCypher 标准，扩展了以下 TuGraph 特有的语法：
+
+### USING SNAPSHOT - 时间快照查询
+
+用于指定外部数据源的时间条件：
+
+```cypher
+USING SNAPSHOT('latest', 1) ON ['Card'] 
+MATCH path = (p:Person)-[r:BORN_IN]->(c:Card) 
+RETURN path
+```
+
+**语法说明**：
+- `SNAPSHOT('latest', 1)`: 指定快照版本，`latest` 表示最新版本，`1` 表示版本号
+- `ON ['Card']`: 指定应用快照的标签列表
+
+### PROJECT BY - 字段投影
+
+用于指定返回字段的投影规则：
+
+```cypher
+MATCH path = (p:Person)-[r:BORN_IN]->(c:Card) 
+RETURN path PROJECT BY {'Card': ['name', 'id']}
+```
+
+**语法说明**：
+- `PROJECT BY {'Label': ['field1', 'field2']}`: 指定每个标签需要返回的字段列表
+- 仅对指定标签的节点进行字段过滤
+
+### 多关系类型匹配
+
+支持在单条边上匹配多种关系类型：
+
+```cypher
+MATCH (ne:NetworkElement)-[r:NEHasLtps|NEHasAlarms|NEHasKPI]->(target)
+RETURN ne, target
+```
+
+**语法说明**：
+- 使用 `|` 分隔多个关系类型
+- 系统会自动分离物理边和虚拟边的查询
+
 ## 支持的查询场景
 
 ### 1. 多关系类型混合查询
@@ -152,6 +196,10 @@ src/main/java/com/federatedquery/
 2. **读写分离**: 仅支持只读查询 (MATCH, RETURN, WITH 等)
 3. **批量请求**: 防止 N+1 查询风暴
 4. **计划缓存**: Caffeine 缓存执行计划
+
+## 文档
+
+- [SPEC.md](docs/SPEC.md) - SDK 规范与约束文档
 
 ## 构建
 
