@@ -1,12 +1,10 @@
 package com.federatedquery.adapter;
 
 import com.federatedquery.plan.ExternalQuery;
-import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
-@Component
 public class MockExternalAdapter implements DataSourceAdapter {
     private final Map<String, MockResponse> responses = new HashMap<>();
     private String dataSourceName = "mock";
