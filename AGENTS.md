@@ -60,35 +60,35 @@ Cypher → CypherParserFacade (ANTLR4 + Caffeine cache) → AST (Program)
 - Test setup pattern: create `MetadataRegistryImpl` → register data sources + virtual edges + labels → register mock adapters on `FederatedExecutor` → wire all components into `GraphQuerySDK`.
 - E2ETest (`src/test/java/.../e2e/E2ETest.java`) covers all 5 query scenarios with full pipeline.
 
-### UT 强制精确校验规范
+### UT Strict Validation Requirements
 
-**所有端到端测试必须遵循以下校验规则：**
+**All end-to-end tests MUST follow these validation rules:**
 
-1. **禁止模糊判断**: 不允许使用 `json.size() > 0` 或 `if (json.size() > 0)` 等绕过校验的判断
-2. **精确数量校验**: 必须使用 `assertEquals(expectedSize, json.size(), "结果数量必须是X条")`
-3. **内容完整性校验**: 必须验证返回结果的每个字段值
-4. **字段存在性校验**: 必须使用 `assertTrue(row.has("fieldName"), "必须有fieldName字段")`
+1. **No vague assertions**: Do NOT use `json.size() > 0` or `if (json.size() > 0)` to bypass validation
+2. **Exact count validation**: MUST use `assertEquals(expectedSize, json.size(), "Result count must be X")`
+3. **Content completeness validation**: MUST verify every field value in returned results
+4. **Field existence validation**: MUST use `assertTrue(row.has("fieldName"), "fieldName field is required")`
 
-**正确示例**:
+**Correct Example**:
 ```java
 JsonNode json = objectMapper.readTree(result);
-assertTrue(json.isArray(), "结果必须是数组");
-assertEquals(1, json.size(), "结果数组应该有1条记录");
+assertTrue(json.isArray(), "Result must be an array");
+assertEquals(1, json.size(), "Result array should have 1 record");
 
 JsonNode firstRow = json.get(0);
-assertTrue(firstRow.has("n"), "第一行必须有n字段");
+assertTrue(firstRow.has("n"), "First row must have 'n' field");
 
 JsonNode nNode = firstRow.get("n");
-assertEquals("NetworkElement", nNode.get("label").asText(), "n的label必须是NetworkElement");
-assertEquals("NE001", nNode.get("name").asText(), "n的name必须是NE001");
+assertEquals("NetworkElement", nNode.get("label").asText(), "n.label must be NetworkElement");
+assertEquals("NE001", nNode.get("name").asText(), "n.name must be NE001");
 ```
 
-**错误示例** (禁止使用):
+**Incorrect Example** (FORBIDDEN):
 ```java
-// ❌ 禁止: 模糊数量判断
-assertTrue(json.size() > 0, "结果数组不能为空");
+// ❌ FORBIDDEN: Vague count assertion
+assertTrue(json.size() > 0, "Result array cannot be empty");
 
-// ❌ 禁止: 条件绕过校验
+// ❌ FORBIDDEN: Conditional bypass
 if (json.size() > 0) {
     JsonNode firstRow = json.get(0);
     // ...
