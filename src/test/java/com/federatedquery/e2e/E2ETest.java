@@ -151,6 +151,9 @@ class E2ETest {
         GraphEntity neEntity = createNEEntity("ne1", "NE001", "Router");
         neEntity.setVariableName("ne");
         
+        GraphEntity ltpEntity = createLTPEntity("ltp1", "LTP1", "Port");
+        ltpEntity.setVariableName("target");
+        
         GraphEntity kpiEntity = createKPIEntity("kpi1", "cpu_usage", 85.5);
         kpiEntity.setVariableName("target");
         
@@ -158,7 +161,8 @@ class E2ETest {
         alarmEntity.setVariableName("target");
         
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(neEntity));
+                .addEntity(neEntity)
+                .addEntity(ltpEntity));
         
         kpiAdapter.registerResponse("getKPIByNeIds", MockExternalAdapter.MockResponse.create()
                 .addEntity(kpiEntity));
@@ -177,11 +181,25 @@ class E2ETest {
         assertTrue(json.isArray(), "结果必须是数组");
         assertTrue(json.size() > 0, "结果数组不能为空");
         
+        Set<String> targetTypes = new HashSet<>();
         for (int i = 0; i < json.size(); i++) {
             JsonNode row = json.get(i);
             assertTrue(row.isObject(), "每行必须是对象");
-            assertTrue(row.size() > 0, "每行必须有字段");
+            assertTrue(row.has("ne"), "每行必须有ne字段");
+            assertTrue(row.has("target"), "每行必须有target字段");
+            
+            JsonNode neNode = row.get("ne");
+            assertTrue(neNode.has("label"), "ne必须有label字段");
+            assertEquals("NetworkElement", neNode.get("label").asText(), "ne的label必须是NetworkElement");
+            
+            JsonNode targetNode = row.get("target");
+            assertTrue(targetNode.has("label"), "target必须有label字段");
+            String targetLabel = targetNode.get("label").asText();
+            targetTypes.add(targetLabel);
         }
+        
+        assertTrue(targetTypes.contains("LTP") || targetTypes.contains("KPI") || targetTypes.contains("Alarm"), 
+                "target必须包含LTP、KPI或Alarm类型");
     }
     
     @Test

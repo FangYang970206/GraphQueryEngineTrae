@@ -129,7 +129,7 @@ public class GraphQuerySDK {
         
         List<String> returnVariables = getReturnVariables(ast);
         
-        Map<String, List<GraphEntity>> entitiesByVarName = new HashMap<>();
+        Map<String, List<GraphEntity>> entitiesByVarName = new LinkedHashMap<>();
         
         for (List<QueryResult> qrList : execResult.getPhysicalResults().values()) {
             for (QueryResult qr : qrList) {
@@ -179,22 +179,35 @@ public class GraphQuerySDK {
             return results;
         }
         
-        int maxRows = 0;
-        for (String varName : returnVariables) {
-            List<GraphEntity> entities = entitiesByVarName.get(varName);
-            if (entities != null) {
-                maxRows = Math.max(maxRows, entities.size());
-            }
-        }
+        String primaryVar = returnVariables.size() > 1 ? returnVariables.get(returnVariables.size() - 1) : returnVariables.get(0);
+        List<GraphEntity> primaryEntities = entitiesByVarName.getOrDefault(primaryVar, new ArrayList<>());
         
-        for (int i = 0; i < Math.max(1, maxRows); i++) {
+        if (primaryEntities.isEmpty()) {
             Map<String, Object> row = new LinkedHashMap<>();
             for (String varName : returnVariables) {
                 List<GraphEntity> entities = entitiesByVarName.get(varName);
-                if (entities != null && i < entities.size()) {
-                    row.put(varName, entityToTuGraphFormat(entities.get(i)));
-                } else if (entities != null && !entities.isEmpty()) {
+                if (entities != null && !entities.isEmpty()) {
                     row.put(varName, entityToTuGraphFormat(entities.get(0)));
+                }
+            }
+            if (!row.isEmpty()) {
+                results.add(row);
+            }
+            return results;
+        }
+        
+        for (int i = 0; i < primaryEntities.size(); i++) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            for (String varName : returnVariables) {
+                List<GraphEntity> entities = entitiesByVarName.get(varName);
+                if (entities != null && !entities.isEmpty()) {
+                    if (varName.equals(primaryVar)) {
+                        if (i < entities.size()) {
+                            row.put(varName, entityToTuGraphFormat(entities.get(i)));
+                        }
+                    } else {
+                        row.put(varName, entityToTuGraphFormat(entities.get(0)));
+                    }
                 }
             }
             if (!row.isEmpty()) {
