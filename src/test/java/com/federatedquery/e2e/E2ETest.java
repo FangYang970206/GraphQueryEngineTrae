@@ -177,7 +177,7 @@ class E2ETest {
         
         JsonNode json = objectMapper.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
-        assertTrue(json.size() > 0, "结果数组不能为空");
+        assertEquals(5, json.size(), "结果数组应该有5条记录");
         
         Set<String> targetTypes = new HashSet<>();
         for (int i = 0; i < json.size(); i++) {
@@ -232,7 +232,7 @@ class E2ETest {
         
         JsonNode json = objectMapper.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
-        assertTrue(json.size() > 0, "结果数组不能为空");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
         
         JsonNode firstRow = json.get(0);
         assertTrue(firstRow.has("paths"), "每行必须有paths字段");
@@ -303,18 +303,18 @@ class E2ETest {
         
         JsonNode json = objectMapper.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
-        assertTrue(json.size() > 0, "结果数组不能为空");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
         
         JsonNode firstRow = json.get(0);
         assertTrue(firstRow.has("paths"), "每行必须有paths字段");
         
         JsonNode paths = firstRow.get("paths");
         assertTrue(paths.isArray(), "paths必须是数组");
-        assertTrue(paths.size() > 0, "paths数组不能为空");
+        assertEquals(1, paths.size(), "paths数组应该有1条路径");
         
         JsonNode firstPath = paths.get(0);
         assertTrue(firstPath.isArray(), "每个path必须是数组");
-        assertTrue(firstPath.size() >= 7, "路径至少应该有7个元素(4个节点+3个边)");
+        assertEquals(7, firstPath.size(), "路径应该有7个元素(4个节点+3个边)");
         
         JsonNode firstNode = firstPath.get(0);
         assertEquals("node", firstNode.get("type").asText(), "第一个元素必须是node");
@@ -366,7 +366,7 @@ class E2ETest {
         
         JsonNode json = objectMapper.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
-        assertTrue(json.size() > 0, "结果数组不能为空");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
         
         JsonNode firstRow = json.get(0);
         assertTrue(firstRow.isObject(), "第一行必须是对象");
@@ -375,6 +375,8 @@ class E2ETest {
         JsonNode nNode = firstRow.get("n");
         assertTrue(nNode.has("label"), "n必须有label字段");
         assertEquals("NetworkElement", nNode.get("label").asText(), "n的label必须是NetworkElement");
+        assertTrue(nNode.has("name"), "n必须有name属性");
+        assertEquals("NE001", nNode.get("name").asText(), "n的name必须是NE001");
     }
     
     @Test
@@ -402,12 +404,14 @@ class E2ETest {
         
         JsonNode json = objectMapper.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
-        assertTrue(json.size() > 0, "结果数组不能为空");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
         
-        for (int i = 0; i < json.size(); i++) {
-            JsonNode row = json.get(i);
-            assertTrue(row.isObject(), "每行必须是对象");
-        }
+        JsonNode firstRow = json.get(0);
+        assertTrue(firstRow.isObject(), "每行必须是对象");
+        assertTrue(firstRow.has("ne"), "第一行必须有ne字段");
+        
+        JsonNode neNode = firstRow.get("ne");
+        assertEquals("NetworkElement", neNode.get("label").asText(), "ne的label必须是NetworkElement");
     }
     
     @Test
@@ -459,7 +463,7 @@ class E2ETest {
         
         JsonNode json = objectMapper.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
-        assertTrue(json.size() > 0, "结果数组不能为空");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
         
         JsonNode firstRow = json.get(0);
         assertTrue(firstRow.has("n"), "第一行必须有n字段");
@@ -467,6 +471,8 @@ class E2ETest {
         JsonNode nNode = firstRow.get("n");
         assertTrue(nNode.has("label"), "n必须有label字段");
         assertEquals("NetworkElement", nNode.get("label").asText());
+        assertTrue(nNode.has("name"), "n必须有name属性");
+        assertEquals("NE001", nNode.get("name").asText(), "n的name必须是NE001");
     }
     
     @Test
@@ -491,13 +497,15 @@ class E2ETest {
         
         JsonNode json = objectMapper.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
-        assertTrue(json.size() > 0, "结果数组不能为空");
+        assertEquals(2, json.size(), "结果数组应该有2条记录");
         assertTrue(json.size() <= 5, "结果数量不能超过LIMIT值");
         
-        for (int i = 0; i < json.size(); i++) {
-            JsonNode row = json.get(i);
-            assertTrue(row.has("n"), "每行必须有n字段");
-        }
+        JsonNode firstRow = json.get(0);
+        assertTrue(firstRow.has("n"), "第一行必须有n字段");
+        assertEquals("Switch", firstRow.get("n").get("type").asText(), "第一条记录type应该是Switch(DESC排序)");
+        
+        JsonNode secondRow = json.get(1);
+        assertTrue(secondRow.has("n"), "第二行必须有n字段");
     }
     
     @Test
@@ -524,13 +532,18 @@ class E2ETest {
         
         JsonNode json = objectMapper.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
-        assertTrue(json.size() > 0, "结果数组不能为空");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
         
-        for (int i = 0; i < json.size(); i++) {
-            JsonNode row = json.get(i);
-            assertTrue(row.isObject(), "每行必须是对象");
-            assertTrue(row.size() > 0, "每行必须有字段");
-        }
+        JsonNode firstRow = json.get(0);
+        assertTrue(firstRow.isObject(), "每行必须是对象");
+        assertTrue(firstRow.has("ne"), "第一行必须有ne字段");
+        assertTrue(firstRow.has("kpi"), "第一行必须有kpi字段");
+        
+        JsonNode neNode = firstRow.get("ne");
+        assertEquals("NetworkElement", neNode.get("label").asText(), "ne的label必须是NetworkElement");
+        
+        JsonNode kpiNode = firstRow.get("kpi");
+        assertEquals("KPI", kpiNode.get("label").asText(), "kpi的label必须是KPI");
     }
     
     @Test
@@ -561,7 +574,7 @@ class E2ETest {
         
         JsonNode json = objectMapper.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
-        assertTrue(json.size() > 0, "结果数组不能为空");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
         
         for (int i = 0; i < json.size(); i++) {
             JsonNode row = json.get(i);
@@ -607,5 +620,349 @@ class E2ETest {
         entity.setProperty("severity", severity);
         entity.setProperty("message", message);
         return entity;
+    }
+    
+    @Test
+    @DisplayName("参数化查询测试")
+    void parameterizedQueryTest() throws Exception {
+        GraphEntity neEntity = createNEEntity("ne1", "NE001", "Router");
+        neEntity.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(neEntity));
+        
+        String cypher = "MATCH (n:NetworkElement {name: $name}) RETURN n";
+        Map<String, Object> params = new HashMap<>();
+        params.put("name", "NE001");
+        
+        String result = sdk.executeRaw(cypher, params);
+        
+        assertNotNull(result, "结果不能为空");
+        assertFalse(result.isEmpty(), "结果不能为空字符串");
+        
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
+        
+        JsonNode firstRow = json.get(0);
+        assertTrue(firstRow.has("n"), "第一行必须有n字段");
+        
+        JsonNode nNode = firstRow.get("n");
+        assertEquals("NetworkElement", nNode.get("label").asText(), "n的label必须是NetworkElement");
+        assertEquals("NE001", nNode.get("name").asText(), "n的name必须是NE001");
+    }
+    
+    @Test
+    @DisplayName("全局排序测试 - ORDER BY DESC")
+    void globalSortDescTest() throws Exception {
+        GraphEntity ne1 = createNEEntity("ne1", "AAA", "Router");
+        ne1.setVariableName("n");
+        GraphEntity ne2 = createNEEntity("ne2", "BBB", "Switch");
+        ne2.setVariableName("n");
+        GraphEntity ne3 = createNEEntity("ne3", "CCC", "Router");
+        ne3.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(ne1)
+                .addEntity(ne2)
+                .addEntity(ne3));
+        
+        String cypher = "MATCH (n:NetworkElement) RETURN n ORDER BY n.name DESC";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+        
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertTrue(json.size() >= 2, "结果至少有2条记录");
+        
+        JsonNode firstName = json.get(0).get("n").get("name");
+        JsonNode lastName = json.get(json.size() - 1).get("n").get("name");
+        
+        assertTrue(firstName.asText().compareTo(lastName.asText()) >= 0, 
+                "DESC排序: 第一条记录name应该大于等于最后一条");
+    }
+    
+    @Test
+    @DisplayName("全局分页测试 - LIMIT和SKIP")
+    void globalPaginationTest() throws Exception {
+        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
+        ne1.setVariableName("n");
+        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
+        ne2.setVariableName("n");
+        GraphEntity ne3 = createNEEntity("ne3", "NE003", "Router");
+        ne3.setVariableName("n");
+        GraphEntity ne4 = createNEEntity("ne4", "NE004", "Switch");
+        ne4.setVariableName("n");
+        GraphEntity ne5 = createNEEntity("ne5", "NE005", "Router");
+        ne5.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(ne1)
+                .addEntity(ne2)
+                .addEntity(ne3)
+                .addEntity(ne4)
+                .addEntity(ne5));
+        
+        String cypher = "MATCH (n:NetworkElement) RETURN n SKIP 1 LIMIT 3";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+        
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertEquals(3, json.size(), "结果数量应该是3条(LIMIT 3)");
+    }
+    
+    @Test
+    @DisplayName("WHERE条件下推测试 - 物理节点条件")
+    void whereConditionPushdownPhysicalTest() throws Exception {
+        GraphEntity neEntity = createNEEntity("ne1", "NE001", "Router");
+        neEntity.setVariableName("ne");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(neEntity));
+        
+        String cypher = "MATCH (ne:NetworkElement) WHERE ne.name = 'NE001' RETURN ne";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+        
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertTrue(json.size() > 0, "结果数组不能为空");
+    }
+    
+    @Test
+    @DisplayName("WHERE条件下推测试 - 虚拟节点条件")
+    void whereConditionPushdownVirtualTest() throws Exception {
+        GraphEntity neEntity = createNEEntity("ne1", "NE001", "Router");
+        neEntity.setVariableName("ne");
+        
+        GraphEntity kpiEntity = createKPIEntity("kpi1", "cpu_usage", 95.0);
+        kpiEntity.setVariableName("kpi");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(neEntity));
+        
+        kpiAdapter.registerResponse("getKPIByNeIds", MockExternalAdapter.MockResponse.create()
+                .addEntity(kpiEntity));
+        
+        String cypher = "MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) WHERE kpi.value > 90 RETURN ne, kpi";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+        
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
+    }
+    
+    @Test
+    @DisplayName("纯虚拟标签查询测试 - 示例4真实场景")
+    void pureVirtualLabelQueryTest() throws Exception {
+        GraphEntity cardEntity = GraphEntity.node("card1", "Card");
+        cardEntity.setProperty("name", "card001");
+        cardEntity.setProperty("resId", "2131221");
+        cardEntity.setProperty("status", "active");
+        cardEntity.setVariableName("card");
+        
+        cardAdapter.registerResponse("getByLabel", MockExternalAdapter.MockResponse.create()
+                .addEntity(cardEntity));
+        
+        String cypher = "MATCH (card:Card {name: 'card001'}) RETURN card";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+        assertFalse(result.isEmpty(), "结果不能为空字符串");
+        
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
+        
+        JsonNode firstRow = json.get(0);
+        assertTrue(firstRow.has("card"), "第一行必须有card字段");
+        
+        JsonNode cardNode = firstRow.get("card");
+        assertTrue(cardNode.has("label"), "card必须有label字段");
+        assertEquals("Card", cardNode.get("label").asText(), "card的label必须是Card");
+        assertEquals("card001", cardNode.get("name").asText(), "card的name必须是card001");
+    }
+    
+    @Test
+    @DisplayName("外部服务超时配置测试")
+    void externalServiceTimeoutTest() throws Exception {
+        FederatedExecutor executorWithTimeout = new FederatedExecutor(registry);
+        executorWithTimeout.setTimeoutMs(5000);
+        executorWithTimeout.registerAdapter("tugraph", tugraphAdapter);
+        
+        GraphEntity neEntity = createNEEntity("ne1", "NE001", "Router");
+        neEntity.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(neEntity));
+        
+        assertEquals(5000, executorWithTimeout.getTimeoutMs(), "超时时间应该设置为5000ms");
+        
+        executorWithTimeout.shutdown();
+    }
+    
+    @Test
+    @DisplayName("USING SNAPSHOT Unix时间戳测试")
+    void usingSnapshotTimestampTest() throws Exception {
+        GraphEntity cardEntity = GraphEntity.node("card1", "Card");
+        cardEntity.setProperty("name", "card001");
+        cardEntity.setProperty("status", "active");
+        cardEntity.setVariableName("card");
+        
+        cardAdapter.registerResponse("getByLabel", MockExternalAdapter.MockResponse.create()
+                .addEntity(cardEntity));
+        
+        String cypher = "USING SNAPSHOT('latest', 1704067200) ON [Card] MATCH (card:Card) RETURN card";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+        assertFalse(result.isEmpty(), "结果不能为空字符串");
+        
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组, 实际结果: " + result);
+        assertEquals(1, json.size(), "结果数量应该是1条");
+        
+        JsonNode firstRow = json.get(0);
+        assertTrue(firstRow.has("card"), "第一行必须有card字段");
+        
+        JsonNode cardNode = firstRow.get("card");
+        assertEquals("Card", cardNode.get("label").asText(), "card的label必须是Card");
+        assertEquals("card001", cardNode.get("name").asText(), "card的name必须是card001");
+    }
+    
+    @Test
+    @DisplayName("USING SNAPSHOT 带WHERE条件测试")
+    void usingSnapshotWithWhereTest() throws Exception {
+        GraphEntity cardEntity = GraphEntity.node("card1", "Card");
+        cardEntity.setProperty("name", "card001");
+        cardEntity.setVariableName("card");
+        
+        cardAdapter.registerResponse("getByLabel", MockExternalAdapter.MockResponse.create()
+                .addEntity(cardEntity));
+        
+        String cypher = "USING SNAPSHOT('snapshot1', 1704067200) ON [Card] MATCH (card:Card {name: 'card001'}) RETURN card";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+        
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组, 实际结果: " + result);
+        assertEquals(1, json.size(), "结果数量应该是1条");
+    }
+    
+    @Test
+    @DisplayName("WITH 子句基本测试 - 过滤中间结果")
+    void withClauseBasicTest() throws Exception {
+        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
+        ne1.setVariableName("n");
+        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
+        ne2.setVariableName("n");
+        GraphEntity ne3 = createNEEntity("ne3", "NE003", "Router");
+        ne3.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(ne1)
+                .addEntity(ne2)
+                .addEntity(ne3));
+        
+        String cypher = "MATCH (n:NetworkElement) WITH n ORDER BY n.name LIMIT 2 RETURN n";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+        
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertTrue(json.size() <= 2, "WITH LIMIT 2 应该限制结果数量");
+    }
+    
+    @Test
+    @DisplayName("WITH 子句别名测试")
+    void withClauseAliasTest() throws Exception {
+        GraphEntity neEntity = createNEEntity("ne1", "NE001", "Router");
+        neEntity.setVariableName("ne");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(neEntity));
+        
+        String cypher = "MATCH (ne:NetworkElement) WITH ne RETURN ne";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+        
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
+        
+        JsonNode firstRow = json.get(0);
+        assertTrue(firstRow.has("ne"), "第一行必须有ne字段");
+        
+        JsonNode neNode = firstRow.get("ne");
+        assertEquals("NetworkElement", neNode.get("label").asText(), "ne的label必须是NetworkElement");
+    }
+    
+    @Test
+    @DisplayName("WITH 子句 WHERE 过滤测试")
+    void withClauseWhereTest() throws Exception {
+        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
+        ne1.setVariableName("n");
+        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
+        ne2.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(ne1)
+                .addEntity(ne2));
+        
+        String cypher = "MATCH (n:NetworkElement) WITH n WHERE n.type = 'Router' RETURN n";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+        
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+    }
+    
+    @Test
+    @DisplayName("WITH 子句排序分页测试")
+    void withClauseSortPaginateTest() throws Exception {
+        GraphEntity ne1 = createNEEntity("ne1", "AAA", "Router");
+        ne1.setVariableName("n");
+        GraphEntity ne2 = createNEEntity("ne2", "BBB", "Switch");
+        ne2.setVariableName("n");
+        GraphEntity ne3 = createNEEntity("ne3", "CCC", "Router");
+        ne3.setVariableName("n");
+        GraphEntity ne4 = createNEEntity("ne4", "DDD", "Switch");
+        ne4.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(ne1)
+                .addEntity(ne2)
+                .addEntity(ne3)
+                .addEntity(ne4));
+        
+        String cypher = "MATCH (n:NetworkElement) WITH n ORDER BY n.name DESC SKIP 1 LIMIT 2 RETURN n";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+        
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertEquals(2, json.size(), "SKIP 1 LIMIT 2 应该返回2条记录");
     }
 }

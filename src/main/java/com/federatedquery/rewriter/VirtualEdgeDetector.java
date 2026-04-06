@@ -55,6 +55,14 @@ public class VirtualEdgeDetector {
     }
     
     private void checkNodeVirtual(NodePattern node, DetectionResult result) {
+        if (node.getLabels().isEmpty()) {
+            PhysicalNodePart part = new PhysicalNodePart();
+            part.setVariable(node.getVariable());
+            part.setProperties(node.getProperties());
+            result.addPhysicalNodePart(part);
+            return;
+        }
+        
         for (String label : node.getLabels()) {
             if (registry.isVirtualLabel(label)) {
                 VirtualNodePart part = new VirtualNodePart();

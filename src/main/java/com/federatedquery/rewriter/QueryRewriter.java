@@ -4,6 +4,7 @@ import com.federatedquery.ast.*;
 import com.federatedquery.metadata.MetadataRegistry;
 import com.federatedquery.metadata.VirtualEdgeBinding;
 import com.federatedquery.plan.*;
+import com.federatedquery.reliability.WhereConditionPushdown;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -13,10 +14,18 @@ import java.util.stream.Collectors;
 public class QueryRewriter {
     private final MetadataRegistry registry;
     private final VirtualEdgeDetector detector;
+    private final WhereConditionPushdown whereConditionPushdown;
     
     public QueryRewriter(MetadataRegistry registry, VirtualEdgeDetector detector) {
         this.registry = registry;
         this.detector = detector;
+        this.whereConditionPushdown = new WhereConditionPushdown(registry);
+    }
+    
+    public QueryRewriter(MetadataRegistry registry, VirtualEdgeDetector detector, WhereConditionPushdown whereConditionPushdown) {
+        this.registry = registry;
+        this.detector = detector;
+        this.whereConditionPushdown = whereConditionPushdown;
     }
     
     public ExecutionPlan rewrite(Program program) {
@@ -30,6 +39,13 @@ public class QueryRewriter {
         }
         
         Statement.Query query = statement.getQuery();
+        
+        if (!query.getSingleQueries().isEmpty()) {
+            Statement.SingleQuery firstQuery = query.getSingleQueries().get(0);
+            if (firstQuery.getUsingSnapshot() != null) {
+                plan.getGlobalContext().setUsingSnapshot(firstQuery.getUsingSnapshot());
+            }
+        }
         
         if (query.getSingleQueries().size() > 1 || !query.getUnions().isEmpty()) {
             rewriteUnionQuery(query, plan);
@@ -65,20 +81,90 @@ public class QueryRewriter {
     }
     
     private void rewriteSingleQuery(Statement.SingleQuery singleQuery, ExecutionPlan plan) {
+        if (singleQuery.hasMultiPartQuery()) {
+            rewriteMultiPartQuery(singleQuery, plan);
+        } else {
+            for (MatchClause match : singleQuery.getMatchClauses()) {
+                rewriteMatchClause(match, singleQuery.getWhereClause(), plan);
+            }
+            
+            if (singleQuery.getReturnClause() != null) {
+                rewriteReturnClause(singleQuery.getReturnClause(), plan);
+            }
+        }
+    }
+    
+    private void rewriteMultiPartQuery(Statement.SingleQuery singleQuery, ExecutionPlan plan) {
+        List<WithClause> withClauses = singleQuery.getPrecedingWithClauses();
+        List<List<MatchClause>> matchClausesList = singleQuery.getPrecedingMatchClauses();
+        List<WhereClause> whereClauses = singleQuery.getPrecedingWhereClauses();
+        
+        for (int i = 0; i < matchClausesList.size(); i++) {
+            List<MatchClause> matches = matchClausesList.get(i);
+            WhereClause where = i < whereClauses.size() ? whereClauses.get(i) : null;
+            
+            for (MatchClause match : matches) {
+                rewriteMatchClause(match, where, plan);
+            }
+            
+            if (i < withClauses.size()) {
+                WithClause withClause = withClauses.get(i);
+                applyWithClause(withClause, plan);
+            }
+        }
+        
         for (MatchClause match : singleQuery.getMatchClauses()) {
-            rewriteMatchClause(match, plan);
+            rewriteMatchClause(match, singleQuery.getWhereClause(), plan);
         }
         
         if (singleQuery.getReturnClause() != null) {
             rewriteReturnClause(singleQuery.getReturnClause(), plan);
         }
-        
-        if (singleQuery.getWhereClause() != null) {
-            extractWhereConditions(singleQuery.getWhereClause(), plan);
-        }
     }
     
-    private void rewriteMatchClause(MatchClause match, ExecutionPlan plan) {
+    private void applyWithClause(WithClause withClause, ExecutionPlan plan) {
+        if (withClause.getWhereClause() != null) {
+            extractWhereConditions(withClause.getWhereClause(), plan);
+        }
+        
+        if (withClause.getOrderByClause() != null) {
+            GlobalContext.OrderSpec orderSpec = convertOrderBy(withClause.getOrderByClause());
+            plan.getGlobalContext().setGlobalOrder(orderSpec);
+        }
+        
+        GlobalContext.LimitSpec limitSpec = new GlobalContext.LimitSpec();
+        if (withClause.getSkipClause() != null) {
+            limitSpec.setSkip(withClause.getSkipClause().getSkipValue());
+        }
+        if (withClause.getLimitClause() != null) {
+            limitSpec.setLimit(withClause.getLimitClause().getLimitValue());
+        }
+        if (withClause.getSkipClause() != null || withClause.getLimitClause() != null) {
+            plan.getGlobalContext().setGlobalLimit(limitSpec);
+        }
+        
+        List<String> passedVariables = new ArrayList<>();
+        for (ReturnClause.ReturnItem item : withClause.getReturnItems()) {
+            if (item.getAlias() != null) {
+                passedVariables.add(item.getAlias());
+            } else if (item.getExpression() != null) {
+                String varName = extractVariableName(item.getExpression());
+                if (varName != null) {
+                    passedVariables.add(varName);
+                }
+            }
+        }
+        plan.getGlobalContext().setWithVariables(passedVariables);
+    }
+    
+    private String extractVariableName(Expression expr) {
+        if (expr instanceof Variable) {
+            return ((Variable) expr).getName();
+        }
+        return null;
+    }
+    
+    private void rewriteMatchClause(MatchClause match, WhereClause whereClause, ExecutionPlan plan) {
         Pattern pattern = match.getPattern();
         if (pattern == null) return;
         
@@ -88,17 +174,69 @@ public class QueryRewriter {
             throw new VirtualEdgeConstraintException(String.join("; ", detection.getErrors()));
         }
         
+        WhereConditionPushdown.PushdownResult pushdownResult = null;
+        if (whereClause != null) {
+            pushdownResult = whereConditionPushdown.analyze(whereClause, pattern);
+        }
+        
         if (!detection.hasVirtualElements()) {
             PhysicalQuery physicalQuery = createPhysicalQuery(match, pattern);
+            if (pushdownResult != null) {
+                applyPhysicalConditions(physicalQuery, pushdownResult.getPhysicalConditions());
+                for (WhereConditionPushdown.Condition vc : pushdownResult.getVirtualConditions()) {
+                    GlobalContext.WhereCondition condition = convertToWhereCondition(vc);
+                    condition.setVirtual(true);
+                    plan.getGlobalContext().addPendingFilter(condition);
+                }
+            }
             plan.addPhysicalQuery(physicalQuery);
         } else {
             plan.setHasVirtualElements(true);
-            rewriteMixedPattern(match, detection, plan);
+            rewriteMixedPattern(match, detection, pushdownResult, plan);
+        }
+    }
+    
+    private GlobalContext.WhereCondition convertToWhereCondition(WhereConditionPushdown.Condition c) {
+        GlobalContext.WhereCondition condition = new GlobalContext.WhereCondition();
+        condition.setVariable(c.getVariable());
+        condition.setProperty(c.getProperty());
+        condition.setOperator(c.getOperator());
+        condition.setValue(c.getValue());
+        condition.setOriginalExpression(c.getOriginalExpression());
+        return condition;
+    }
+    
+    private void applyPhysicalConditions(PhysicalQuery query, List<WhereConditionPushdown.Condition> conditions) {
+        if (conditions == null || conditions.isEmpty()) return;
+        
+        StringBuilder whereClause = new StringBuilder();
+        for (int i = 0; i < conditions.size(); i++) {
+            WhereConditionPushdown.Condition c = conditions.get(i);
+            if (i > 0) whereClause.append(" AND ");
+            whereClause.append(c.toCypher());
+        }
+        
+        String cypher = query.getCypher();
+        if (cypher != null && !cypher.contains("WHERE")) {
+            int returnIdx = cypher.toUpperCase().indexOf("RETURN");
+            if (returnIdx > 0) {
+                cypher = cypher.substring(0, returnIdx) + "WHERE " + whereClause + " " + cypher.substring(returnIdx);
+                query.setCypher(cypher);
+            }
+        }
+    }
+    
+    private void applyVirtualConditionsToExternalQuery(ExternalQuery query, List<WhereConditionPushdown.Condition> conditions) {
+        if (conditions == null || conditions.isEmpty()) return;
+        
+        for (WhereConditionPushdown.Condition c : conditions) {
+            String key = c.getProperty() != null ? c.getProperty() : c.getVariable();
+            query.addFilter(key, c.getValue());
         }
     }
     
     private void rewriteMixedPattern(MatchClause match, VirtualEdgeDetector.DetectionResult detection, 
-                                     ExecutionPlan plan) {
+                                     WhereConditionPushdown.PushdownResult pushdownResult, ExecutionPlan plan) {
         List<VirtualEdgeDetector.VirtualEdgePart> virtualEdges = detection.getVirtualEdgeParts();
         List<VirtualEdgeDetector.VirtualNodePart> virtualNodes = detection.getVirtualNodeParts();
         
@@ -107,11 +245,17 @@ public class QueryRewriter {
                 if (ve.isFirstHop()) {
                     PhysicalQuery startQuery = createStartNodeQuery(ve.getStartNode());
                     if (startQuery != null) {
+                        if (pushdownResult != null) {
+                            applyPhysicalConditions(startQuery, pushdownResult.getPhysicalConditions());
+                        }
                         plan.addPhysicalQuery(startQuery);
                     }
                 }
                 
-                ExternalQuery extQuery = createExternalQuery(ve);
+                ExternalQuery extQuery = createExternalQuery(ve, plan);
+                if (pushdownResult != null) {
+                    applyVirtualConditionsToExternalQuery(extQuery, pushdownResult.getVirtualConditions());
+                }
                 plan.addExternalQuery(extQuery);
             }
         }
@@ -123,12 +267,18 @@ public class QueryRewriter {
                     match
             );
             if (physicalQuery != null) {
+                if (pushdownResult != null) {
+                    applyPhysicalConditions(physicalQuery, pushdownResult.getPhysicalConditions());
+                }
                 plan.addPhysicalQuery(physicalQuery);
             }
         }
         
         for (VirtualEdgeDetector.VirtualNodePart vn : virtualNodes) {
-            ExternalQuery nodeQuery = createVirtualNodeQuery(vn);
+            ExternalQuery nodeQuery = createVirtualNodeQuery(vn, plan);
+            if (pushdownResult != null) {
+                applyVirtualConditionsToExternalQuery(nodeQuery, pushdownResult.getVirtualConditions());
+            }
             plan.addExternalQuery(nodeQuery);
         }
     }
@@ -197,7 +347,7 @@ public class QueryRewriter {
         return query;
     }
     
-    private ExternalQuery createExternalQuery(VirtualEdgeDetector.VirtualEdgePart ve) {
+    private ExternalQuery createExternalQuery(VirtualEdgeDetector.VirtualEdgePart ve, ExecutionPlan plan) {
         ExternalQuery query = new ExternalQuery();
         query.setId(UUID.randomUUID().toString());
         query.setDataSource(ve.getDataSource());
@@ -217,10 +367,12 @@ public class QueryRewriter {
         Optional<VirtualEdgeBinding> binding = registry.getVirtualEdgeBinding(ve.getEdgeType());
         binding.ifPresent(b -> query.setOutputFields(b.getOutputFields()));
         
+        applySnapshotToQuery(query, plan);
+        
         return query;
     }
     
-    private ExternalQuery createVirtualNodeQuery(VirtualEdgeDetector.VirtualNodePart vn) {
+    private ExternalQuery createVirtualNodeQuery(VirtualEdgeDetector.VirtualNodePart vn, ExecutionPlan plan) {
         ExternalQuery query = new ExternalQuery();
         query.setId(UUID.randomUUID().toString());
         query.setDataSource(vn.getDataSource());
@@ -230,28 +382,27 @@ public class QueryRewriter {
             query.addOutputVariable(vn.getVariable());
         }
         
+        applySnapshotToQuery(query, plan);
+        
         return query;
+    }
+    
+    private void applySnapshotToQuery(ExternalQuery query, ExecutionPlan plan) {
+        UsingSnapshot snapshot = plan.getGlobalContext().getUsingSnapshot();
+        if (snapshot != null) {
+            query.setSnapshotName(snapshot.getSnapshotName());
+            Long unixTimestamp = snapshot.getSnapshotTimeAsUnixTimestamp();
+            if (unixTimestamp != null) {
+                query.setSnapshotTime(unixTimestamp);
+            }
+        }
     }
     
     private void rewriteReturnClause(ReturnClause returnClause, ExecutionPlan plan) {
         GlobalContext context = plan.getGlobalContext();
         
         if (returnClause.getOrderByClause() != null) {
-            GlobalContext.OrderSpec orderSpec = new GlobalContext.OrderSpec();
-            for (OrderByClause.SortItem item : returnClause.getOrderByClause().getSortItems()) {
-                GlobalContext.OrderItem orderItem = new GlobalContext.OrderItem();
-                if (item.getExpression() instanceof PropertyAccess) {
-                    PropertyAccess pa = (PropertyAccess) item.getExpression();
-                    if (pa.getTarget() instanceof Variable) {
-                        orderItem.setVariable(((Variable) pa.getTarget()).getName());
-                    }
-                    orderItem.setProperty(pa.getPropertyName());
-                } else if (item.getExpression() instanceof Variable) {
-                    orderItem.setVariable(((Variable) item.getExpression()).getName());
-                }
-                orderItem.setDescending(item.getDirection() == OrderByClause.SortDirection.DESC);
-                orderSpec.addItem(orderItem);
-            }
+            GlobalContext.OrderSpec orderSpec = convertOrderBy(returnClause.getOrderByClause());
             context.setGlobalOrder(orderSpec);
         }
         
@@ -275,6 +426,25 @@ public class QueryRewriter {
                 limitSpec.setSkip(skip);
             }
         }
+    }
+    
+    private GlobalContext.OrderSpec convertOrderBy(OrderByClause orderByClause) {
+        GlobalContext.OrderSpec orderSpec = new GlobalContext.OrderSpec();
+        for (OrderByClause.SortItem item : orderByClause.getSortItems()) {
+            GlobalContext.OrderItem orderItem = new GlobalContext.OrderItem();
+            if (item.getExpression() instanceof PropertyAccess) {
+                PropertyAccess pa = (PropertyAccess) item.getExpression();
+                if (pa.getTarget() instanceof Variable) {
+                    orderItem.setVariable(((Variable) pa.getTarget()).getName());
+                }
+                orderItem.setProperty(pa.getPropertyName());
+            } else if (item.getExpression() instanceof Variable) {
+                orderItem.setVariable(((Variable) item.getExpression()).getName());
+            }
+            orderItem.setDescending(item.getDirection() == OrderByClause.SortDirection.DESC);
+            orderSpec.addItem(orderItem);
+        }
+        return orderSpec;
     }
     
     private void extractWhereConditions(WhereClause where, ExecutionPlan plan) {

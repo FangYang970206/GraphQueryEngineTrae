@@ -9,6 +9,7 @@ import com.federatedquery.ast.*;
 import com.federatedquery.executor.ExecutionResult;
 import com.federatedquery.parser.CypherParserFacade;
 import com.federatedquery.plan.ExecutionPlan;
+import com.federatedquery.plan.GlobalContext;
 import com.federatedquery.rewriter.QueryRewriter;
 import com.federatedquery.executor.FederatedExecutor;
 import org.slf4j.Logger;
@@ -58,6 +59,8 @@ public class GraphQuerySDK {
             
             List<Map<String, Object>> results = buildTuGraphFormatResults(ast, stitched, execResult);
             
+            results = applyGlobalSortAndPagination(results, plan.getGlobalContext());
+            
             return objectMapper.writeValueAsString(results);
             
         } catch (Exception e) {
@@ -74,10 +77,182 @@ public class GraphQuerySDK {
             
             List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult, execResult);
             
+            results = applyGlobalSortAndPagination(results, plan.getGlobalContext());
+            
             return objectMapper.writeValueAsString(results);
         } catch (Exception e) {
             return buildErrorResponse(e);
         }
+    }
+    
+    public String execute(String cypher, Map<String, Object> params) {
+        String resolvedCypher = resolveParameters(cypher, params);
+        return execute(resolvedCypher);
+    }
+    
+    public String executeRaw(String cypher, Map<String, Object> params) {
+        String resolvedCypher = resolveParameters(cypher, params);
+        return executeRaw(resolvedCypher);
+    }
+    
+    private String resolveParameters(String cypher, Map<String, Object> params) {
+        if (params == null || params.isEmpty()) {
+            return cypher;
+        }
+        
+        String result = cypher;
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            String placeholder = "$" + entry.getKey();
+            String value = formatParameterValue(entry.getValue());
+            result = result.replace(placeholder, value);
+        }
+        
+        return result;
+    }
+    
+    private String formatParameterValue(Object value) {
+        if (value == null) {
+            return "NULL";
+        }
+        if (value instanceof String) {
+            return "'" + value.toString().replace("'", "\\'") + "'";
+        }
+        if (value instanceof Number) {
+            return value.toString();
+        }
+        if (value instanceof Boolean) {
+            return value.toString();
+        }
+        return "'" + value.toString().replace("'", "\\'") + "'";
+    }
+    
+    private List<Map<String, Object>> applyGlobalSortAndPagination(List<Map<String, Object>> results, GlobalContext context) {
+        if (results == null || results.isEmpty()) {
+            return results;
+        }
+        
+        List<Map<String, Object>> projected = applyProjection(results, context.getProjectBy());
+        
+        List<Map<String, Object>> sorted = applySorting(projected, context.getGlobalOrder());
+        
+        List<Map<String, Object>> paged = applyPagination(sorted, context.getGlobalLimit());
+        
+        return paged;
+    }
+    
+    private List<Map<String, Object>> applyProjection(List<Map<String, Object>> results, ProjectBy projectBy) {
+        if (projectBy == null || projectBy.getProjections().isEmpty()) {
+            return results;
+        }
+        
+        Map<String, List<String>> projections = projectBy.getProjections();
+        List<Map<String, Object>> projectedResults = new ArrayList<>();
+        
+        for (Map<String, Object> row : results) {
+            Map<String, Object> projectedRow = new LinkedHashMap<>();
+            
+            for (Map.Entry<String, Object> entry : row.entrySet()) {
+                String varName = entry.getKey();
+                Object value = entry.getValue();
+                
+                if (value instanceof Map) {
+                    Map<String, Object> entityMap = (Map<String, Object>) value;
+                    String label = (String) entityMap.get("label");
+                    
+                    if (label != null && projections.containsKey(label)) {
+                        List<String> fields = projections.get(label);
+                        Map<String, Object> projectedEntity = new LinkedHashMap<>();
+                        
+                        for (String field : fields) {
+                            if (entityMap.containsKey(field)) {
+                                projectedEntity.put(field, entityMap.get(field));
+                            }
+                        }
+                        
+                        if (!projectedEntity.containsKey("label")) {
+                            projectedEntity.put("label", label);
+                        }
+                        
+                        projectedRow.put(varName, projectedEntity);
+                    } else {
+                        projectedRow.put(varName, value);
+                    }
+                } else {
+                    projectedRow.put(varName, value);
+                }
+            }
+            
+            projectedResults.add(projectedRow);
+        }
+        
+        return projectedResults;
+    }
+    
+    private List<Map<String, Object>> applySorting(List<Map<String, Object>> results, GlobalContext.OrderSpec orderSpec) {
+        if (orderSpec == null || orderSpec.getItems().isEmpty()) {
+            return results;
+        }
+        
+        List<Map<String, Object>> sorted = new ArrayList<>(results);
+        
+        sorted.sort((row1, row2) -> {
+            for (GlobalContext.OrderItem item : orderSpec.getItems()) {
+                int cmp = compareByOrderItem(row1, row2, item);
+                if (cmp != 0) {
+                    return item.isDescending() ? -cmp : cmp;
+                }
+            }
+            return 0;
+        });
+        
+        return sorted;
+    }
+    
+    private int compareByOrderItem(Map<String, Object> row1, Map<String, Object> row2, GlobalContext.OrderItem item) {
+        Object v1 = extractValueFromRow(row1, item);
+        Object v2 = extractValueFromRow(row2, item);
+        
+        if (v1 == null && v2 == null) return 0;
+        if (v1 == null) return 1;
+        if (v2 == null) return -1;
+        
+        if (v1 instanceof Comparable && v2 instanceof Comparable) {
+            return ((Comparable) v1).compareTo(v2);
+        }
+        
+        return v1.toString().compareTo(v2.toString());
+    }
+    
+    private Object extractValueFromRow(Map<String, Object> row, GlobalContext.OrderItem item) {
+        String variable = item.getVariable();
+        String property = item.getProperty();
+        
+        Object value = row.get(variable);
+        if (value instanceof Map) {
+            Map<String, Object> entityMap = (Map<String, Object>) value;
+            if (property != null) {
+                return entityMap.get(property);
+            }
+            return entityMap.get("id");
+        }
+        
+        return value;
+    }
+    
+    private List<Map<String, Object>> applyPagination(List<Map<String, Object>> results, GlobalContext.LimitSpec limitSpec) {
+        if (limitSpec == null) {
+            return results;
+        }
+        
+        int skip = limitSpec.getSkip();
+        int limit = limitSpec.getLimit() > 0 ? limitSpec.getLimit() : results.size();
+        
+        if (skip >= results.size()) {
+            return new ArrayList<>();
+        }
+        
+        int end = Math.min(skip + limit, results.size());
+        return new ArrayList<>(results.subList(skip, end));
     }
     
     private List<Map<String, Object>> buildTuGraphFormatResults(Program ast, StitchedResult stitched, ExecutionResult execResult) {

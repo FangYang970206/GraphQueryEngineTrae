@@ -1,11 +1,14 @@
 package com.federatedquery.ast;
 
+import lombok.Data;
+
 import java.util.ArrayList;
 import java.util.List;
 
+@Data
 public class UsingSnapshot implements AstNode {
     private String snapshotName;
-    private Expression version;
+    private Expression snapshotTime;
     private List<String> labels = new ArrayList<>();
     
     @Override
@@ -13,40 +16,29 @@ public class UsingSnapshot implements AstNode {
         return visitor.visit(this);
     }
     
-    public String getSnapshotName() {
-        return snapshotName;
-    }
-    
-    public void setSnapshotName(String snapshotName) {
-        this.snapshotName = snapshotName;
-    }
-    
-    public Expression getVersion() {
-        return version;
-    }
-    
-    public void setVersion(Expression version) {
-        this.version = version;
-    }
-    
-    public List<String> getLabels() {
-        return labels;
-    }
-    
-    public void setLabels(List<String> labels) {
-        this.labels = labels;
-    }
-    
     public void addLabel(String label) {
         this.labels.add(label);
+    }
+    
+    public Long getSnapshotTimeAsUnixTimestamp() {
+        if (snapshotTime == null) {
+            return null;
+        }
+        if (snapshotTime instanceof Literal) {
+            Object value = ((Literal) snapshotTime).getValue();
+            if (value instanceof Number) {
+                return ((Number) value).longValue();
+            }
+        }
+        return null;
     }
     
     @Override
     public String toCypher() {
         StringBuilder sb = new StringBuilder("USING SNAPSHOT('");
         sb.append(snapshotName).append("', ");
-        if (version != null) {
-            sb.append(version.toCypher());
+        if (snapshotTime != null) {
+            sb.append(snapshotTime.toCypher());
         }
         sb.append(") ON [");
         for (int i = 0; i < labels.size(); i++) {

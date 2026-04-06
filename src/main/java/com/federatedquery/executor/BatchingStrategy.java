@@ -28,6 +28,7 @@ public class BatchingStrategy {
             List<String> allInputIds = new ArrayList<>();
             String inputIdField = null;
             List<String> outputFields = new ArrayList<>();
+            List<String> outputVariables = new ArrayList<>();
             
             for (ExternalQuery q : groupQueries) {
                 allInputIds.addAll(q.getInputIds());
@@ -35,25 +36,41 @@ public class BatchingStrategy {
                     inputIdField = q.getInputIdField();
                 }
                 outputFields.addAll(q.getOutputFields());
+                outputVariables.addAll(q.getOutputVariables());
             }
             
             outputFields = new ArrayList<>(new LinkedHashSet<>(outputFields));
+            outputVariables = new ArrayList<>(new LinkedHashSet<>(outputVariables));
             
             int totalSize = allInputIds.size();
-            for (int i = 0; i < totalSize; i += maxBatchSize) {
-                int end = Math.min(i + maxBatchSize, totalSize);
-                List<String> batchIds = allInputIds.subList(i, end);
-                
+            if (totalSize == 0) {
                 BatchRequest batch = new BatchRequest();
                 batch.setId(UUID.randomUUID().toString());
                 batch.setDataSource(dataSource);
                 batch.setOperator(operator);
-                batch.setInputIds(new ArrayList<>(batchIds));
+                batch.setInputIds(new ArrayList<>());
                 batch.setInputIdField(inputIdField);
                 batch.setOutputFields(new ArrayList<>(outputFields));
+                batch.setOutputVariables(new ArrayList<>(outputVariables));
                 batch.setOriginalQueries(groupQueries);
-                
                 batches.add(batch);
+            } else {
+                for (int i = 0; i < totalSize; i += maxBatchSize) {
+                    int end = Math.min(i + maxBatchSize, totalSize);
+                    List<String> batchIds = allInputIds.subList(i, end);
+                    
+                    BatchRequest batch = new BatchRequest();
+                    batch.setId(UUID.randomUUID().toString());
+                    batch.setDataSource(dataSource);
+                    batch.setOperator(operator);
+                    batch.setInputIds(new ArrayList<>(batchIds));
+                    batch.setInputIdField(inputIdField);
+                    batch.setOutputFields(new ArrayList<>(outputFields));
+                    batch.setOutputVariables(new ArrayList<>(outputVariables));
+                    batch.setOriginalQueries(groupQueries);
+                    
+                    batches.add(batch);
+                }
             }
         }
         

@@ -14,16 +14,27 @@ import java.util.concurrent.*;
 public class FederatedExecutor {
     private static final Logger log = LoggerFactory.getLogger(FederatedExecutor.class);
     
+    private static final long DEFAULT_TIMEOUT_MS = 30000;
+    
     private final MetadataRegistry registry;
     private final Map<String, DataSourceAdapter> adapters;
     private final ExecutorService executorService;
     private final BatchingStrategy batchingStrategy;
+    private long timeoutMs = DEFAULT_TIMEOUT_MS;
     
     public FederatedExecutor(MetadataRegistry registry) {
         this.registry = registry;
         this.adapters = new ConcurrentHashMap<>();
         this.executorService = Executors.newFixedThreadPool(10);
         this.batchingStrategy = new BatchingStrategy();
+    }
+    
+    public void setTimeoutMs(long timeoutMs) {
+        this.timeoutMs = timeoutMs;
+    }
+    
+    public long getTimeoutMs() {
+        return timeoutMs;
     }
     
     public void registerAdapter(String name, DataSourceAdapter adapter) {
@@ -81,7 +92,12 @@ public class FederatedExecutor {
                     QueryResult.error("No TuGraph adapter registered"));
         }
         
-        return adapter.execute(convertToExternalQuery(query));
+        return adapter.execute(convertToExternalQuery(query))
+                .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .exceptionally(e -> {
+                    log.error("Physical query timeout after {}ms: {}", timeoutMs, query.getCypher());
+                    return QueryResult.error("Query timeout after " + timeoutMs + "ms: " + e.getMessage());
+                });
     }
     
     private CompletableFuture<QueryResult> executeExternal(ExternalQuery query) {
@@ -94,7 +110,12 @@ public class FederatedExecutor {
                             "External source " + query.getDataSource() + " unavailable"));
         }
         
-        return adapter.execute(query);
+        return adapter.execute(query)
+                .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .exceptionally(e -> {
+                    log.error("External query timeout after {}ms for data source: {}", timeoutMs, query.getDataSource());
+                    return QueryResult.error("External query timeout after " + timeoutMs + "ms: " + e.getMessage());
+                });
     }
     
     private CompletableFuture<QueryResult> executeBatch(BatchRequest batch) {
@@ -112,14 +133,21 @@ public class FederatedExecutor {
         combinedQuery.setInputIds(batch.getInputIds());
         combinedQuery.setInputIdField(batch.getInputIdField());
         combinedQuery.setOutputFields(batch.getOutputFields());
+        combinedQuery.setOutputVariables(batch.getOutputVariables());
         combinedQuery.setBatched(true);
         
-        return adapter.execute(combinedQuery).thenApply(result -> {
-            if (result.isSuccess()) {
-                return batchingStrategy.unbatch(batch, result);
-            }
-            return result;
-        });
+        return adapter.execute(combinedQuery)
+                .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .exceptionally(e -> {
+                    log.error("Batch query timeout after {}ms for data source: {}", timeoutMs, batch.getDataSource());
+                    return QueryResult.error("Batch query timeout after " + timeoutMs + "ms: " + e.getMessage());
+                })
+                .thenApply(result -> {
+                    if (result.isSuccess()) {
+                        return batchingStrategy.unbatch(batch, result);
+                    }
+                    return result;
+                });
     }
     
     private CompletableFuture<QueryResult> executeUnion(UnionPart union) {

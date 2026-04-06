@@ -60,9 +60,9 @@ EXPLAIN : ( 'E' | 'e' ) ( 'X' | 'x' ) ( 'P' | 'p' ) ( 'L' | 'l' ) ( 'A' | 'a' ) 
 
 PROFILE : ( 'P' | 'p' ) ( 'R' | 'r' ) ( 'O' | 'o' ) ( 'F' | 'f' ) ( 'I' | 'i' ) ( 'L' | 'l' ) ( 'E' | 'e' ) ;
 
-oC_Query : oC_UsingClause? oC_RegularQuery oC_Project? ;
+oC_Query : oC_UsingClause? SP? oC_RegularQuery oC_Project? ;
 
-oC_UsingClause : oC_Using SP oC_Snapshot ( SP? ',' SP? oC_Snapshot )* ;
+oC_UsingClause : USING SP oC_Snapshot ;
 
 oC_RegularQuery : oC_SingleQuery ( SP? oC_Union )* ;
 

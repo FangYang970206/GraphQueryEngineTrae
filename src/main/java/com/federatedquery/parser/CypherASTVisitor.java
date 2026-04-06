@@ -43,18 +43,17 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     public Statement.Query visitOC_Query(LcypherParser.OC_QueryContext ctx) {
         Statement.Query query = new Statement.Query();
         
-        if (ctx.oC_UsingClause() != null) {
-            for (LcypherParser.OC_SnapshotContext snapshotCtx : ctx.oC_UsingClause().oC_Snapshot()) {
-                UsingSnapshot snapshot = visitOC_Snapshot(snapshotCtx);
-                if (!query.getSingleQueries().isEmpty()) {
-                    query.getSingleQueries().get(0).setUsingSnapshot(snapshot);
-                }
-            }
-        }
-        
         LcypherParser.OC_RegularQueryContext regularQueryCtx = ctx.oC_RegularQuery();
         Statement.SingleQuery firstQuery = visitOC_SingleQuery(regularQueryCtx.oC_SingleQuery());
         query.getSingleQueries().add(firstQuery);
+        
+        if (ctx.oC_UsingClause() != null) {
+            LcypherParser.OC_SnapshotContext snapshotCtx = ctx.oC_UsingClause().oC_Snapshot();
+            if (snapshotCtx != null) {
+                UsingSnapshot snapshot = visitOC_Snapshot(snapshotCtx);
+                firstQuery.setUsingSnapshot(snapshot);
+            }
+        }
         
         if (regularQueryCtx.oC_Union() != null && !regularQueryCtx.oC_Union().isEmpty()) {
             for (LcypherParser.OC_UnionContext unionCtx : regularQueryCtx.oC_Union()) {
@@ -106,6 +105,113 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     }
     
     private void visitOC_MultiPartQuery(LcypherParser.OC_MultiPartQueryContext ctx, Statement.SingleQuery singleQuery) {
+        List<LcypherParser.OC_ReadingClauseContext> allReadingClauses = new ArrayList<>();
+        List<LcypherParser.OC_WithContext> withClauses = new ArrayList<>();
+        List<LcypherParser.OC_WhereContext> withWhereClauses = new ArrayList<>();
+        
+        for (LcypherParser.OC_ReadingClauseContext readingCtx : ctx.oC_ReadingClause()) {
+            allReadingClauses.add(readingCtx);
+        }
+        
+        for (LcypherParser.OC_WithContext withCtx : ctx.oC_With()) {
+            withClauses.add(withCtx);
+            if (withCtx.oC_Where() != null) {
+                withWhereClauses.add(withCtx.oC_Where());
+            } else {
+                withWhereClauses.add(null);
+            }
+        }
+        
+        int readingIdx = 0;
+        for (int i = 0; i < withClauses.size(); i++) {
+            List<MatchClause> partMatches = new ArrayList<>();
+            
+            while (readingIdx < allReadingClauses.size()) {
+                LcypherParser.OC_ReadingClauseContext readingCtx = allReadingClauses.get(readingIdx);
+                if (readingCtx.oC_Match() != null) {
+                    partMatches.add(visitOC_Match(readingCtx.oC_Match()));
+                    readingIdx++;
+                } else {
+                    break;
+                }
+            }
+            
+            singleQuery.addPrecedingMatchClauses(partMatches);
+            
+            WithClause withClause = visitOC_With(withClauses.get(i));
+            singleQuery.addPrecedingWithClause(withClause);
+            
+            if (i < withWhereClauses.size() && withWhereClauses.get(i) != null) {
+                singleQuery.addPrecedingWhereClause(visitOC_Where(withWhereClauses.get(i)));
+            } else {
+                singleQuery.addPrecedingWhereClause(null);
+            }
+        }
+        
+        if (ctx.oC_SinglePartQuery() != null) {
+            visitOC_SinglePartQuery(ctx.oC_SinglePartQuery(), singleQuery);
+        }
+    }
+    
+    @Override
+    public WithClause visitOC_With(LcypherParser.OC_WithContext ctx) {
+        WithClause withClause = new WithClause();
+        
+        withClause.setDistinct(ctx.DISTINCT() != null);
+        
+        LcypherParser.OC_ReturnBodyContext returnBodyCtx = ctx.oC_ReturnBody();
+        if (returnBodyCtx != null) {
+            WithClauseReturnItems returnItems = visitOC_ReturnItemsForWith(returnBodyCtx.oC_ReturnItems());
+            withClause.setReturnItems(returnItems.getItems());
+            
+            if (returnBodyCtx.oC_Order() != null) {
+                withClause.setOrderByClause(visitOC_Order(returnBodyCtx.oC_Order()));
+            }
+            
+            if (returnBodyCtx.oC_Skip() != null) {
+                withClause.setSkipClause(visitOC_Skip(returnBodyCtx.oC_Skip()));
+            }
+            
+            if (returnBodyCtx.oC_Limit() != null) {
+                withClause.setLimitClause(visitOC_Limit(returnBodyCtx.oC_Limit()));
+            }
+        }
+        
+        if (ctx.oC_Where() != null) {
+            withClause.setWhereClause(visitOC_Where(ctx.oC_Where()));
+        }
+        
+        return withClause;
+    }
+    
+    private WithClauseReturnItems visitOC_ReturnItemsForWith(LcypherParser.OC_ReturnItemsContext ctx) {
+        WithClauseReturnItems result = new WithClauseReturnItems();
+        
+        for (LcypherParser.OC_ReturnItemContext itemCtx : ctx.oC_ReturnItem()) {
+            ReturnClause.ReturnItem item = new ReturnClause.ReturnItem();
+            
+            item.setExpression(visitOC_Expression(itemCtx.oC_Expression()));
+            
+            if (itemCtx.AS() != null && itemCtx.oC_Variable() != null) {
+                item.setAlias(itemCtx.oC_Variable().getText());
+            }
+            
+            result.addItem(item);
+        }
+        
+        return result;
+    }
+    
+    private static class WithClauseReturnItems {
+        private List<ReturnClause.ReturnItem> items = new ArrayList<>();
+        
+        public List<ReturnClause.ReturnItem> getItems() {
+            return items;
+        }
+        
+        public void addItem(ReturnClause.ReturnItem item) {
+            this.items.add(item);
+        }
     }
     
     @Override
@@ -646,7 +752,7 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
         }
         
         if (ctx.oC_Expression() != null) {
-            snapshot.setVersion(visitOC_Expression(ctx.oC_Expression()));
+            snapshot.setSnapshotTime(visitOC_Expression(ctx.oC_Expression()));
         }
         
         for (LcypherParser.OC_LabelNameContext labelCtx : ctx.oC_LabelName()) {

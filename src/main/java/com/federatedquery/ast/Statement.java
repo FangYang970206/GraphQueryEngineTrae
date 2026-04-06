@@ -121,6 +121,9 @@ public class Statement implements AstNode {
         private WhereClause whereClause;
         private UsingSnapshot usingSnapshot;
         private ProjectBy projectBy;
+        private List<WithClause> precedingWithClauses = new ArrayList<>();
+        private List<List<MatchClause>> precedingMatchClauses = new ArrayList<>();
+        private List<WhereClause> precedingWhereClauses = new ArrayList<>();
         
         @Override
         public <T> T accept(AstVisitor<T> visitor) {
@@ -175,9 +178,50 @@ public class Statement implements AstNode {
             this.projectBy = projectBy;
         }
         
+        public List<WithClause> getPrecedingWithClauses() {
+            return precedingWithClauses;
+        }
+        
+        public void addPrecedingWithClause(WithClause withClause) {
+            this.precedingWithClauses.add(withClause);
+        }
+        
+        public List<List<MatchClause>> getPrecedingMatchClauses() {
+            return precedingMatchClauses;
+        }
+        
+        public void addPrecedingMatchClauses(List<MatchClause> matchClauses) {
+            this.precedingMatchClauses.add(matchClauses);
+        }
+        
+        public List<WhereClause> getPrecedingWhereClauses() {
+            return precedingWhereClauses;
+        }
+        
+        public void addPrecedingWhereClause(WhereClause whereClause) {
+            this.precedingWhereClauses.add(whereClause);
+        }
+        
+        public boolean hasMultiPartQuery() {
+            return !precedingWithClauses.isEmpty();
+        }
+        
         @Override
         public String toCypher() {
             StringBuilder sb = new StringBuilder();
+            
+            for (int i = 0; i < precedingMatchClauses.size(); i++) {
+                for (MatchClause match : precedingMatchClauses.get(i)) {
+                    sb.append(match.toCypher()).append(" ");
+                }
+                if (i < precedingWhereClauses.size() && precedingWhereClauses.get(i) != null) {
+                    sb.append(precedingWhereClauses.get(i).toCypher()).append(" ");
+                }
+                if (i < precedingWithClauses.size()) {
+                    sb.append(precedingWithClauses.get(i).toCypher()).append(" ");
+                }
+            }
+            
             for (MatchClause match : matchClauses) {
                 sb.append(match.toCypher()).append(" ");
             }
