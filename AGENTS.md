@@ -60,6 +60,41 @@ Cypher → CypherParserFacade (ANTLR4 + Caffeine cache) → AST (Program)
 - Test setup pattern: create `MetadataRegistryImpl` → register data sources + virtual edges + labels → register mock adapters on `FederatedExecutor` → wire all components into `GraphQuerySDK`.
 - E2ETest (`src/test/java/.../e2e/E2ETest.java`) covers all 5 query scenarios with full pipeline.
 
+### UT 强制精确校验规范
+
+**所有端到端测试必须遵循以下校验规则：**
+
+1. **禁止模糊判断**: 不允许使用 `json.size() > 0` 或 `if (json.size() > 0)` 等绕过校验的判断
+2. **精确数量校验**: 必须使用 `assertEquals(expectedSize, json.size(), "结果数量必须是X条")`
+3. **内容完整性校验**: 必须验证返回结果的每个字段值
+4. **字段存在性校验**: 必须使用 `assertTrue(row.has("fieldName"), "必须有fieldName字段")`
+
+**正确示例**:
+```java
+JsonNode json = objectMapper.readTree(result);
+assertTrue(json.isArray(), "结果必须是数组");
+assertEquals(1, json.size(), "结果数组应该有1条记录");
+
+JsonNode firstRow = json.get(0);
+assertTrue(firstRow.has("n"), "第一行必须有n字段");
+
+JsonNode nNode = firstRow.get("n");
+assertEquals("NetworkElement", nNode.get("label").asText(), "n的label必须是NetworkElement");
+assertEquals("NE001", nNode.get("name").asText(), "n的name必须是NE001");
+```
+
+**错误示例** (禁止使用):
+```java
+// ❌ 禁止: 模糊数量判断
+assertTrue(json.size() > 0, "结果数组不能为空");
+
+// ❌ 禁止: 条件绕过校验
+if (json.size() > 0) {
+    JsonNode firstRow = json.get(0);
+    // ...
+}
+```
+
 ## Spring Usage
 
 - Spring Framework 6.1.6 (NOT Spring Boot). Used only for `@Component`/`@Service`/`@Configuration` DI.
