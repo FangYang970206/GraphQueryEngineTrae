@@ -11,7 +11,6 @@ import com.federatedquery.parser.CypherParserFacade;
 import com.federatedquery.plan.ExecutionPlan;
 import com.federatedquery.rewriter.QueryRewriter;
 import com.federatedquery.executor.FederatedExecutor;
-import com.federatedquery.reliability.OOMProtectionInterceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -28,7 +27,6 @@ public class GraphQuerySDK {
     private final ResultStitcher stitcher;
     private final GlobalSorter sorter;
     private final UnionDeduplicator deduplicator;
-    private final OOMProtectionInterceptor oomProtection;
     private final ObjectMapper objectMapper;
     
     public GraphQuerySDK(CypherParserFacade parser,
@@ -36,15 +34,13 @@ public class GraphQuerySDK {
                         FederatedExecutor executor,
                         ResultStitcher stitcher,
                         GlobalSorter sorter,
-                        UnionDeduplicator deduplicator,
-                        OOMProtectionInterceptor oomProtection) {
+                        UnionDeduplicator deduplicator) {
         this.parser = parser;
         this.rewriter = rewriter;
         this.executor = executor;
         this.stitcher = stitcher;
         this.sorter = sorter;
         this.deduplicator = deduplicator;
-        this.oomProtection = oomProtection;
         this.objectMapper = new ObjectMapper();
     }
     
@@ -53,8 +49,6 @@ public class GraphQuerySDK {
         
         try {
             Program ast = parser.parseCached(cypher);
-            
-            ast = oomProtection.enforceLimit(ast);
             
             ExecutionPlan plan = rewriter.rewrite(ast);
             

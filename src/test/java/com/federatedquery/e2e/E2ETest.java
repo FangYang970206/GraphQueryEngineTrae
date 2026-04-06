@@ -7,7 +7,6 @@ import com.federatedquery.aggregator.*;
 import com.federatedquery.executor.FederatedExecutor;
 import com.federatedquery.metadata.*;
 import com.federatedquery.parser.CypherParserFacade;
-import com.federatedquery.reliability.OOMProtectionInterceptor;
 import com.federatedquery.rewriter.QueryRewriter;
 import com.federatedquery.rewriter.VirtualEdgeDetector;
 import com.federatedquery.sdk.GraphQuerySDK;
@@ -139,9 +138,8 @@ class E2ETest {
         ResultStitcher stitcher = new ResultStitcher();
         GlobalSorter sorter = new GlobalSorter();
         UnionDeduplicator deduplicator = new UnionDeduplicator();
-        OOMProtectionInterceptor oomProtection = new OOMProtectionInterceptor();
         
-        sdk = new GraphQuerySDK(parser, rewriter, executor, stitcher, sorter, deduplicator, oomProtection);
+        sdk = new GraphQuerySDK(parser, rewriter, executor, stitcher, sorter, deduplicator);
         objectMapper = new ObjectMapper();
     }
     
