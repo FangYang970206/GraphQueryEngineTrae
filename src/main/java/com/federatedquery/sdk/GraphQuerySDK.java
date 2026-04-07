@@ -300,6 +300,10 @@ public class GraphQuerySDK {
                 return actualValue.toString().startsWith(expectedValue.toString());
             case "ENDS WITH":
                 return actualValue.toString().endsWith(expectedValue.toString());
+            case "IS NULL":
+                return actualValue == null;
+            case "IS NOT NULL":
+                return actualValue != null;
             default:
                 return actualValue.equals(expectedValue);
         }

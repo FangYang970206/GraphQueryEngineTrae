@@ -621,7 +621,53 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     
     @Override
     public Expression visitOC_StringListNullOperatorExpression(LcypherParser.OC_StringListNullOperatorExpressionContext ctx) {
-        return visitOC_PropertyOrLabelsExpression(ctx.oC_PropertyOrLabelsExpression());
+        Expression left = visitOC_PropertyOrLabelsExpression(ctx.oC_PropertyOrLabelsExpression());
+        
+        for (LcypherParser.OC_StringOperatorExpressionContext stringOpCtx : ctx.oC_StringOperatorExpression()) {
+            Comparison comparison = new Comparison();
+            comparison.setLeft(left);
+            
+            String operator;
+            if (stringOpCtx.STARTS() != null) {
+                operator = "STARTS WITH";
+            } else if (stringOpCtx.ENDS() != null) {
+                operator = "ENDS WITH";
+            } else if (stringOpCtx.CONTAINS() != null) {
+                operator = "CONTAINS";
+            } else if (stringOpCtx.REGEXP() != null) {
+                operator = "REGEXP";
+            } else {
+                operator = "=";
+            }
+            
+            comparison.setOperator(operator);
+            comparison.setRight(visitOC_PropertyOrLabelsExpression(stringOpCtx.oC_PropertyOrLabelsExpression()));
+            left = comparison;
+        }
+        
+        for (LcypherParser.OC_ListOperatorExpressionContext listOpCtx : ctx.oC_ListOperatorExpression()) {
+            if (listOpCtx.IN() != null) {
+                Comparison comparison = new Comparison();
+                comparison.setLeft(left);
+                comparison.setOperator("IN");
+                comparison.setRight(visitOC_PropertyOrLabelsExpression(listOpCtx.oC_PropertyOrLabelsExpression()));
+                left = comparison;
+            }
+        }
+        
+        for (LcypherParser.OC_NullOperatorExpressionContext nullOpCtx : ctx.oC_NullOperatorExpression()) {
+            Comparison comparison = new Comparison();
+            comparison.setLeft(left);
+            if (nullOpCtx.NOT() != null) {
+                comparison.setOperator("IS NOT NULL");
+            } else {
+                comparison.setOperator("IS NULL");
+            }
+            comparison.setRight(new Literal(null));
+            left = comparison;
+        }
+        
+        return left;
     }
     
     @Override

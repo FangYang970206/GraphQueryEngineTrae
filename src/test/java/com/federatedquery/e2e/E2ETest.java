@@ -977,6 +977,8 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
     }
     
     @Test
@@ -993,6 +995,16 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
+        
+        JsonNode firstRow = json.get(0);
+        assertTrue(firstRow.has("n"), "第一行必须有n字段");
+        
+        JsonNode nNode = firstRow.get("n");
+        assertEquals("NetworkElement", nNode.get("label").asText(), "n的label必须是NetworkElement");
+        assertEquals("NE001", nNode.get("name").asText(), "n的name必须是NE001");
     }
     
     @Test
@@ -1012,6 +1024,8 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
     }
     
     @Test
@@ -1028,6 +1042,16 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
+        
+        JsonNode firstRow = json.get(0);
+        assertTrue(firstRow.has("n"), "第一行必须有n字段");
+        
+        JsonNode nNode = firstRow.get("n");
+        assertEquals("NetworkElement", nNode.get("label").asText(), "n的label必须是NetworkElement");
+        assertEquals("NE001", nNode.get("name").asText(), "n的name必须是NE001");
     }
     
     @Test
@@ -1047,6 +1071,16 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertTrue(json.size() >= 1, "结果数组应该至少有1条记录");
+        
+        for (int i = 0; i < json.size(); i++) {
+            JsonNode row = json.get(i);
+            assertTrue(row.has("n"), "每行必须有n字段");
+            JsonNode nNode = row.get("n");
+            assertTrue(nNode.get("name").asText().startsWith("NE"), "name必须以NE开头");
+        }
     }
     
     @Test
@@ -1066,6 +1100,15 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertEquals(1, json.size(), "ENDS WITH '01' 过滤后应该只有1条记录");
+        
+        JsonNode firstRow = json.get(0);
+        assertTrue(firstRow.has("n"), "每行必须有n字段");
+        JsonNode nNode = firstRow.get("n");
+        assertEquals("NE001", nNode.get("name").asText(), "name必须是NE001");
+        assertTrue(nNode.get("name").asText().endsWith("01"), "name必须以01结尾");
     }
     
     @Test
@@ -1085,6 +1128,15 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        
+        for (int i = 0; i < json.size(); i++) {
+            JsonNode row = json.get(i);
+            assertTrue(row.has("n"), "每行必须有n字段");
+            JsonNode nNode = row.get("n");
+            assertTrue(nNode.get("name").asText().contains("E00"), "name必须包含E00");
+        }
     }
     
     @Test
@@ -1104,6 +1156,9 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertEquals(2, json.size(), "结果数组应该有2条记录");
     }
     
     @Test
@@ -1126,5 +1181,7 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
     }
 }

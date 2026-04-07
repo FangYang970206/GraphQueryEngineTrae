@@ -81,7 +81,7 @@ public class QueryRewriter {
             rewriteMultiPartQuery(singleQuery, plan);
         } else {
             for (MatchClause match : singleQuery.getMatchClauses()) {
-                rewriteMatchClause(match, singleQuery.getWhereClause(), plan);
+                rewriteMatchClause(match, match.getWhereClause(), plan);
             }
             
             if (singleQuery.getReturnClause() != null) {
@@ -179,6 +179,11 @@ public class QueryRewriter {
             PhysicalQuery physicalQuery = createPhysicalQuery(match, pattern);
             if (pushdownResult != null) {
                 applyPhysicalConditions(physicalQuery, pushdownResult.getPhysicalConditions());
+                for (WhereConditionPushdown.Condition pc : pushdownResult.getPhysicalConditions()) {
+                    GlobalContext.WhereCondition condition = convertToWhereCondition(pc);
+                    condition.setVirtual(false);
+                    plan.getGlobalContext().addPendingFilter(condition);
+                }
                 for (WhereConditionPushdown.Condition vc : pushdownResult.getVirtualConditions()) {
                     GlobalContext.WhereCondition condition = convertToWhereCondition(vc);
                     condition.setVirtual(true);
