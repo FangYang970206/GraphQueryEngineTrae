@@ -154,12 +154,5 @@ src/main/java/.../sdk/         GraphQuerySDK (public entry point)
 ## Reference Docs
 
 - `docs/SPEC.md` — Full SDK spec with constraints, return formats, extension mechanisms
-- `图联邦查询引擎思路.md` — Design doc with query examples and architecture rationale
+- `docs/图联邦查询引擎思路.md` — Design doc with query examples and architecture rationale
 - `docs/todo/optimization-items.md` — Known issues and planned improvements
-
-## Known Issues (as of 2026-04-07)
-
-- **No production TuGraph adapter**: `TuGraphAdapter` was removed; only `MockExternalAdapter` exists for tests. Physical queries will fail with "No TuGraph adapter registered".
-- **Duplicate classes**: `executor/` and `aggregator/` each contain their own copies of UnionDeduplicator, GlobalSorter, ResultStitcher, StitchedResult, PathBuilder. SDK uses aggregator/ versions.
-- **UNION deduplication not wired**: `UnionDeduplicator` is injected but never called — `UNION DISTINCT` may return duplicates.
-- **DataSourceType enum typo**: `TUGRAH_BOLT` should be `TUGRAPH_BOLT`.
