@@ -69,15 +69,6 @@ public class ResultStitcher {
             }
         }
         
-        for (QueryResult qr : execResult.getBatchResults().values()) {
-            for (GraphEntity entity : qr.getEntities()) {
-                Map<String, Object> row = new HashMap<>();
-                String varName = entity.getLabel() != null ? entity.getLabel().toLowerCase() : "entity";
-                row.put(varName, entity);
-                rows.add(row);
-            }
-        }
-        
         for (QueryResult qr : execResult.getUnionResults().values()) {
             for (GraphEntity entity : qr.getEntities()) {
                 Map<String, Object> row = new HashMap<>();

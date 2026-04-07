@@ -435,7 +435,7 @@ class E2ETest {
         
         JsonNode json = objectMapper.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
-        assertTrue(json.size() > 0, "结果数组不能为空");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
         
         for (int i = 0; i < json.size(); i++) {
             JsonNode row = json.get(i);
@@ -446,6 +446,24 @@ class E2ETest {
             assertTrue(nNode.has("label"), "n必须有label字段");
             assertEquals("NetworkElement", nNode.get("label").asText(), "n的label必须是NetworkElement");
         }
+    }
+    
+    @Test
+    @DisplayName("主入口 execute 查询返回正确")
+    void simpleMatchQueryWithExecute() throws Exception {
+        GraphEntity neEntity = createNEEntity("ne1", "NE001", "Router");
+        neEntity.setVariableName("n");
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(neEntity));
+        String result = sdk.execute("MATCH (n:NetworkElement) RETURN n");
+        assertNotNull(result, "结果不能为空");
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
+        JsonNode row = json.get(0);
+        assertTrue(row.has("n"), "结果必须包含n字段");
+        JsonNode nNode = row.get("n");
+        assertTrue(nNode.has("label"), "n必须有label字段");
+        assertEquals("NetworkElement", nNode.get("label").asText(), "n.label必须是NetworkElement");
     }
     
     @Test
@@ -736,7 +754,7 @@ class E2ETest {
         
         JsonNode json = objectMapper.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
-        assertTrue(json.size() > 0, "结果数组不能为空");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
     }
     
     @Test

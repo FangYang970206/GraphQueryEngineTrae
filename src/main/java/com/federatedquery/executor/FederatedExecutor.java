@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.function.Supplier;
 
 @Service
 public class FederatedExecutor {
@@ -62,37 +63,58 @@ public class FederatedExecutor {
         List<CompletableFuture<QueryResult>> futures = new ArrayList<>();
         
         for (PhysicalQuery pq : plan.getPhysicalQueries()) {
-            futures.add(executePhysical(pq).thenApply(r -> {
+            futures.add(executePhysical(pq).thenApplyAsync(r -> {
                 result.addPhysicalResult(pq.getId(), r);
                 return r;
-            }));
+            }, executorService));
         }
         
         List<ExternalQuery> externalQueries = plan.getExternalQueries();
         if (!externalQueries.isEmpty()) {
-            List<BatchRequest> batches = batchingStrategy.batch(externalQueries);
+            List<ExternalQuery> directQueries = new ArrayList<>();
+            List<ExternalQuery> batchedQueries = new ArrayList<>();
             
-            for (BatchRequest batch : batches) {
-                futures.add(executeBatch(batch).thenApply(r -> {
-                    result.addBatchResult(batch.getId(), r);
+            for (ExternalQuery query : externalQueries) {
+                if (query.getInputIds() == null || query.getInputIds().isEmpty()) {
+                    directQueries.add(query);
+                } else {
+                    batchedQueries.add(query);
+                }
+            }
+            
+            for (ExternalQuery query : directQueries) {
+                futures.add(executeExternal(query).thenApplyAsync(r -> {
+                    result.addExternalResult(r);
                     return r;
-                }));
+                }, executorService));
+            }
+            
+            List<BatchRequest> batches = batchingStrategy.batch(batchedQueries);
+            for (BatchRequest batch : batches) {
+                futures.add(executeBatch(batch).thenApplyAsync(r -> {
+                    result.addBatchResult(batch.getId(), r);
+                    List<QueryResult> unbatched = batchingStrategy.unbatch(batch, r);
+                    for (QueryResult qr : unbatched) {
+                        result.addExternalResult(qr);
+                    }
+                    return r;
+                }, executorService));
             }
         }
         
         for (UnionPart union : plan.getUnionParts()) {
-            futures.add(executeUnion(union).thenApply(r -> {
+            futures.add(executeUnion(union).thenApplyAsync(r -> {
                 result.addUnionResult(union.getId(), r);
                 return r;
-            }));
+            }, executorService));
         }
         
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                .thenApply(v -> {
+                .thenApplyAsync(v -> {
                     result.setSuccess(true);
                     result.setExecutionTimeMs(System.currentTimeMillis() - result.getStartTime());
                     return result;
-                });
+                }, executorService);
     }
     
     private CompletableFuture<QueryResult> executePhysical(PhysicalQuery query) {
@@ -106,7 +128,8 @@ public class FederatedExecutor {
                     QueryResult.error("No TuGraph adapter registered"));
         }
         
-        return adapter.execute(convertToExternalQuery(query))
+        DataSourceAdapter finalAdapter = adapter;
+        return runOnExecutor(() -> finalAdapter.execute(convertToExternalQuery(query)))
                 .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                 .exceptionally(e -> {
                     log.error("Physical query timeout after {}ms: {}", timeoutMs, query.getCypher());
@@ -133,7 +156,7 @@ public class FederatedExecutor {
     }
     
     private CompletableFuture<QueryResult> executeWithRetryInternal(DataSourceAdapter adapter, ExternalQuery query, int maxRetries, int attempt) {
-        return adapter.execute(query)
+        return runOnExecutor(() -> adapter.execute(query))
                 .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                 .exceptionally(e -> {
                     if (attempt < maxRetries) {
@@ -187,9 +210,13 @@ public class FederatedExecutor {
         combinedQuery.setInputIdField(batch.getInputIdField());
         combinedQuery.setOutputFields(batch.getOutputFields());
         combinedQuery.setOutputVariables(batch.getOutputVariables());
+        combinedQuery.setFilters(batch.getFilters());
+        combinedQuery.setParameters(batch.getParameters());
+        combinedQuery.setSnapshotName(batch.getSnapshotName());
+        combinedQuery.setSnapshotTime(batch.getSnapshotTime());
         combinedQuery.setBatched(true);
         
-        return adapter.execute(combinedQuery)
+        return runOnExecutor(() -> adapter.execute(combinedQuery))
                 .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                 .exceptionally(e -> {
                     log.error("Batch query timeout after {}ms for data source: {}", timeoutMs, batch.getDataSource());
@@ -221,6 +248,9 @@ public class FederatedExecutor {
                                 }
                             }
                             for (QueryResult r : subResult.getBatchResults().values()) {
+                                combined.getEntities().addAll(r.getEntities());
+                            }
+                            for (QueryResult r : subResult.getExternalResults()) {
                                 combined.getEntities().addAll(r.getEntities());
                             }
                         } catch (Exception e) {
@@ -255,6 +285,10 @@ public class FederatedExecutor {
         eq.setOperator("cypher");
         eq.getFilters().put("cypher", pq.getCypher());
         return eq;
+    }
+    
+    private CompletableFuture<QueryResult> runOnExecutor(Supplier<CompletableFuture<QueryResult>> supplier) {
+        return CompletableFuture.supplyAsync(supplier, executorService).thenCompose(f -> f);
     }
     
     public void shutdown() {

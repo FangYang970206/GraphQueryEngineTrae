@@ -135,6 +135,7 @@ class ExecutorTest {
         assertNotNull(result, "ExecutionResult不能为空");
         assertNotNull(result.getPlanId(), "PlanId不能为空");
         assertTrue(result.getExecutionTimeMs() >= 0, "执行时间必须>=0");
+        assertEquals(1, result.getExternalResults().size(), "无inputIds的外部查询应走direct执行");
     }
     
     @Test

@@ -151,6 +151,24 @@ class RewriterTest {
     }
     
     @Test
+    @DisplayName("Rewrite mixed UNION and UNION ALL")
+    void rewriteMixedUnionAll() {
+        String cypher = "MATCH (n) RETURN n UNION ALL MATCH (m) RETURN m UNION MATCH (k) RETURN k";
+        Program program = parser.parse(cypher);
+        ExecutionPlan plan = rewriter.rewrite(program);
+        assertEquals(1, plan.getUnionParts().size(), "必须有1个UnionPart");
+        assertFalse(plan.getUnionParts().get(0).isAll(), "混合UNION/UNION ALL时all应为false");
+    }
+    
+    @Test
+    @DisplayName("Reject updating clauses in read-only mode")
+    void rejectUpdatingClause() {
+        String cypher = "CREATE (n:NetworkElement {name:'NE001'})";
+        Program program = parser.parse(cypher);
+        assertThrows(UnsupportedOperationException.class, () -> rewriter.rewrite(program));
+    }
+    
+    @Test
     @DisplayName("Push down WHERE conditions")
     void pushdownWhere() {
         String cypher = "MATCH (n:NetworkElement) WHERE n.name = 'NE001' RETURN n";

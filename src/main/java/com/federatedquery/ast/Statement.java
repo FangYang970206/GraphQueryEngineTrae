@@ -117,6 +117,7 @@ public class Statement implements AstNode {
     public static class SingleQuery implements AstNode {
         private List<MatchClause> matchClauses = new ArrayList<>();
         private List<UnwindClause> unwindClauses = new ArrayList<>();
+        private boolean hasUpdatingClause;
         private ReturnClause returnClause;
         private WithClause withClause;
         private WhereClause whereClause;
@@ -213,6 +214,14 @@ public class Statement implements AstNode {
         
         public void addPrecedingWhereClause(WhereClause whereClause) {
             this.precedingWhereClauses.add(whereClause);
+        }
+        
+        public boolean isHasUpdatingClause() {
+            return hasUpdatingClause;
+        }
+        
+        public void setHasUpdatingClause(boolean hasUpdatingClause) {
+            this.hasUpdatingClause = hasUpdatingClause;
         }
         
         public boolean hasMultiPartQuery() {

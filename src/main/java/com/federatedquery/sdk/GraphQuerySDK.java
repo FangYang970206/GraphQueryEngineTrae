@@ -68,7 +68,7 @@ public class GraphQuerySDK {
             
             StitchedResult stitched = stitcher.stitch(execResult, plan);
             
-            List<Map<String, Object>> results = buildTuGraphFormatResults(ast, stitched, execResult);
+            List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult, execResult);
             
             results = applyPendingFilters(results, stitched.getPendingFilters());
             
@@ -530,17 +530,6 @@ public class GraphQuerySDK {
                 }
             }
         }
-        for (QueryResult qr : execResult.getBatchResults().values()) {
-            for (GraphEntity entity : qr.getEntities()) {
-                String varName = entity.getVariableName();
-                if (varName != null && !varName.isEmpty()) {
-                    entitiesByVarName.computeIfAbsent(varName, k -> new ArrayList<>()).add(entity);
-                } else if (entity.getId() != null) {
-                    entitiesByVarName.computeIfAbsent(entity.getId(), k -> new ArrayList<>()).add(entity);
-                }
-            }
-        }
-        
         if (returnInfos.isEmpty()) {
             for (List<GraphEntity> entities : entitiesByVarName.values()) {
                 for (GraphEntity entity : entities) {
