@@ -129,7 +129,14 @@ public class GraphQuerySDK {
         
         String result = cypher;
         for (Map.Entry<String, Object> entry : params.entrySet()) {
-            String placeholder = "$" + entry.getKey();
+            String paramName = entry.getKey();
+            
+            if (!isValidParameterName(paramName)) {
+                log.warn("Invalid parameter name: {}, skipping", paramName);
+                continue;
+            }
+            
+            String placeholder = "$" + paramName;
             String value = formatParameterValue(entry.getValue());
             result = result.replace(placeholder, value);
         }
@@ -137,12 +144,35 @@ public class GraphQuerySDK {
         return result;
     }
     
+    private boolean isValidParameterName(String name) {
+        if (name == null || name.isEmpty()) {
+            return false;
+        }
+        
+        if (!name.matches("^[a-zA-Z_][a-zA-Z0-9_]*$")) {
+            return false;
+        }
+        
+        if (name.length() > 128) {
+            return false;
+        }
+        
+        return true;
+    }
+    
     private String formatParameterValue(Object value) {
         if (value == null) {
             return "NULL";
         }
         if (value instanceof String) {
-            return "'" + value.toString().replace("'", "\\'") + "'";
+            String str = (String) value;
+            str = str.replace("\\", "\\\\");
+            str = str.replace("'", "\\'");
+            str = str.replace("\"", "\\\"");
+            str = str.replace("\n", "\\n");
+            str = str.replace("\r", "\\r");
+            str = str.replace("\t", "\\t");
+            return "'" + str + "'";
         }
         if (value instanceof Number) {
             return value.toString();
@@ -150,7 +180,40 @@ public class GraphQuerySDK {
         if (value instanceof Boolean) {
             return value.toString();
         }
-        return "'" + value.toString().replace("'", "\\'") + "'";
+        if (value instanceof Collection) {
+            Collection<?> collection = (Collection<?>) value;
+            StringBuilder sb = new StringBuilder("[");
+            boolean first = true;
+            for (Object item : collection) {
+                if (!first) {
+                    sb.append(", ");
+                }
+                sb.append(formatParameterValue(item));
+                first = false;
+            }
+            sb.append("]");
+            return sb.toString();
+        }
+        if (value instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) value;
+            StringBuilder sb = new StringBuilder("{");
+            boolean first = true;
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if (!first) {
+                    sb.append(", ");
+                }
+                sb.append(formatParameterValue(entry.getKey()));
+                sb.append(": ");
+                sb.append(formatParameterValue(entry.getValue()));
+                first = false;
+            }
+            sb.append("}");
+            return sb.toString();
+        }
+        String str = value.toString();
+        str = str.replace("\\", "\\\\");
+        str = str.replace("'", "\\'");
+        return "'" + str + "'";
     }
     
     private List<Map<String, Object>> applyPendingFilters(List<Map<String, Object>> results, List<GlobalContext.WhereCondition> pendingFilters) {

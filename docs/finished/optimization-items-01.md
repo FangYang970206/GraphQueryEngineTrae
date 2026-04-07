@@ -1,15 +1,15 @@
-# 优化待办事项
+# 优化待办事项 - 已完成
 
 **创建日期**: 2026-04-07  
+**完成日期**: 2026-04-07  
 **依据**: 项目审计报告 v2  
 **范围**: 功能缺口、架构问题、代码质量  
-**最后更新**: 2026-04-07
 
 ---
 
 ## P0 — 必须修复（阻塞正确性）
 
-### [P0-1] `pendingFilters` 数据流断裂 — WHERE 虚拟条件未过滤结果
+### [P0-1] `pendingFilters` 数据流断裂 — WHERE 虚拟条件未过滤结果 ✅
 
 **问题描述**:  
 `QueryRewriter.whereConditionPushdown.analyze()` 正确收集了 `isVirtual=true` 的条件到 `GlobalContext.pendingFilters`，但 `GraphQuerySDK.buildTuGraphFormatResults()` 从未读取 `stitched.getPendingFilters()` 对结果进行过滤。
@@ -22,11 +22,9 @@
 **涉及文件**:
 - `src/main/java/com/federatedquery/sdk/GraphQuerySDK.java`
 
-**状态**: ✅ 已修复
-
 ---
 
-### [P0-2] `deduplicate()` 注入但从未调用 — UNION 去重不工作
+### [P0-2] `deduplicate()` 注入但从未调用 — UNION 去重不工作 ✅
 
 **问题描述**:  
 `GraphQuerySDK` 注入了 `UnionDeduplicator deduplicator`，但整个类中零调用。
@@ -40,13 +38,11 @@
 - `src/main/java/com/federatedquery/sdk/GraphQuerySDK.java`
 - `src/main/java/com/federatedquery/aggregator/UnionDeduplicator.java`
 
-**状态**: ✅ 已修复
-
 ---
 
 ## P1 — 高优先级（功能完整性）
 
-### [P1-1] `EXPLAIN`/`PROFILE` — 语法解析了但从未执行
+### [P1-1] `EXPLAIN`/`PROFILE` — 语法解析了但从未执行 ✅
 
 **问题描述**:  
 `CypherASTVisitor.visitOC_Statement()` 正确解析了 `EXPLAIN`/`PROFILE` 标记到 `Statement`，但后续 pipeline 完全忽略这些标志。
@@ -59,11 +55,9 @@
 **涉及文件**:
 - `src/main/java/com/federatedquery/sdk/GraphQuerySDK.java`
 
-**状态**: ✅ 已修复
-
 ---
 
-### [P1-2] `BatchingStrategy.unbatch()` 空实现
+### [P1-2] `BatchingStrategy.unbatch()` 空实现 ✅
 
 **问题描述**:  
 `BatchingStrategy.unbatch()` 直接透传批量结果，未按 `originalQueries` 拆分到 individual `QueryResult`。
@@ -76,11 +70,9 @@
 **涉及文件**:
 - `src/main/java/com/federatedquery/executor/BatchingStrategy.java`
 
-**状态**: ✅ 已修复
-
 ---
 
-### [P1-3] 清理重复类 — `executor/` vs `aggregator/`
+### [P1-3] 清理重复类 — `executor/` vs `aggregator/` ✅
 
 **问题描述**:  
 以下类在 `executor/` 和 `aggregator/` 两个包中各有一份：
@@ -98,25 +90,27 @@
 **涉及文件**:
 - `src/main/java/com/federatedquery/executor/` (已删除重复类)
 
-**状态**: ✅ 已修复
-
 ---
 
-### [P1-4] 参数化查询安全加固
+### [P1-4] 参数化查询安全加固 ✅
 
 **问题描述**:  
 当前 `GraphQuerySDK.resolveParameters()` 使用简单字符串替换，存在注入风险。
 
-**建议修复**:
-1. 对非 String 类型（数组、Map）添加转义
-2. 添加参数名白名单校验
-3. 考虑使用 ANTLR 重写参数替换逻辑
+**修复内容**:
+1. 添加 `isValidParameterName()` 方法，校验参数名格式（`^[a-zA-Z_][a-zA-Z0-9_]*$`）和长度（≤128）
+2. 增强 `formatParameterValue()` 方法：
+   - String 类型：转义 `\`, `'`, `"`, `\n`, `\r`, `\t`
+   - Collection 类型：生成 Cypher 列表语法 `[...]`
+   - Map 类型：生成 Cypher Map 语法 `{...}`
+3. 跳过无效参数名并记录警告日志
 
-**状态**: 🟡 待处理
+**涉及文件**:
+- `src/main/java/com/federatedquery/sdk/GraphQuerySDK.java`
 
 ---
 
-### [P1-5] Spring 依赖注入配置不完整
+### [P1-5] Spring 依赖注入配置不完整 ✅
 
 **问题描述**:  
 以下类缺少 `@Component` 注解或构造函数中使用 `new` 创建依赖对象。
@@ -133,13 +127,11 @@
 - `src/main/java/com/federatedquery/parser/CypherParserFacade.java`
 - `src/main/java/com/federatedquery/rewriter/QueryRewriter.java`
 
-**状态**: ✅ 已修复
-
 ---
 
 ## P2 — 中优先级（代码质量）
 
-### [P2-1] 拼写错误 — `TUGRAH_BOLT` → `TUGRAPH_BOLT`
+### [P2-1] 拼写错误 — `TUGRAH_BOLT` → `TUGRAPH_BOLT` ✅
 
 **问题描述**:  
 `DataSourceType.java` 枚举值拼写错误。
@@ -153,11 +145,9 @@
 - `src/test/java/com/federatedquery/e2e/E2ETest.java`
 - `src/test/java/com/federatedquery/rewriter/RewriterTest.java`
 
-**状态**: ✅ 已修复
-
 ---
 
-### [P2-2] ThreadPool 无溢出保护
+### [P2-2] ThreadPool 无溢出保护 ✅
 
 **问题描述**:  
 `FederatedExecutor` 使用 `Executors.newFixedThreadPool(10)`，队列无界，高并发时可能导致 OOM。
@@ -175,11 +165,9 @@
 **涉及文件**:
 - `src/main/java/com/federatedquery/executor/FederatedExecutor.java`
 
-**状态**: ✅ 已修复
-
 ---
 
-### [P2-3] 外部服务失败静默吞掉
+### [P2-3] 外部服务失败静默吞掉 ✅
 
 **问题描述**:  
 `FederatedExecutor.executeExternal()` 在外部服务不可用时返回 `QueryResult.partial()` 但 SDK 层从未读取 `warnings` 暴露给用户。
@@ -192,31 +180,39 @@
 **涉及文件**:
 - `src/main/java/com/federatedquery/sdk/GraphQuerySDK.java`
 
-**状态**: ✅ 已修复
-
 ---
 
-### [P2-4] `ResultStitcher.buildRows()` 逻辑过于简化
+### [P2-4] `ResultStitcher.buildRows()` 逻辑过于简化 ✅
 
 **问题描述**:  
 `buildRows()` 只处理第一个 `QueryResult` 的实体，忽略所有后续 `externalResults` 和其他 `physicalResults`。
 
-**建议修复**:
-遍历所有 `physicalResults`、`externalResults`、`batchResults` 中的实体，正确组装行数据。
+**修复内容**:
+1. 遍历所有 `physicalResults` 中的实体
+2. 遍历所有 `externalResults` 中的实体
+3. 遍历所有 `batchResults` 中的实体
+4. 遍历所有 `unionResults` 中的实体
+5. 为每个实体创建独立的行数据
 
-**状态**: 🟡 待处理
+**涉及文件**:
+- `src/main/java/com/federatedquery/aggregator/ResultStitcher.java`
 
 ---
 
-### [P2-5] 外部服务重试机制未实现
+### [P2-5] 外部服务重试机制未实现 ✅
 
 **问题描述**:  
 `DataSourceMetadata` 定义了 `maxRetries = 3` 但从未被使用。
 
-**建议修复**:
-在 `FederatedExecutor` 的各 `execute*` 方法中添加重试逻辑。
+**修复内容**:
+1. 添加 `DEFAULT_MAX_RETRIES = 3` 和 `RETRY_DELAY_MS = 100` 常量
+2. 添加 `getMaxRetries()` 方法，从 `DataSourceMetadata` 获取重试次数
+3. 添加 `executeWithRetry()` 和 `executeWithRetryInternal()` 方法
+4. 实现指数退避重试逻辑（每次重试延迟增加）
+5. 在 `executeExternal()` 中使用重试机制
 
-**状态**: 🟢 待处理
+**涉及文件**:
+- `src/main/java/com/federatedquery/executor/FederatedExecutor.java`
 
 ---
 
@@ -229,17 +225,18 @@
 | 🟡 P1 | P1-1 | EXPLAIN/PROFILE 未执行 | 小 | ✅ 已修复 |
 | 🟡 P1 | P1-2 | unbatch() 空实现 | 小 | ✅ 已修复 |
 | 🟡 P1 | P1-3 | 清理 executor/ 重复类 | 中 | ✅ 已修复 |
-| 🟡 P1 | P1-4 | 参数化查询安全加固 | 小 | 🟡 待处理 |
+| 🟡 P1 | P1-4 | 参数化查询安全加固 | 小 | ✅ 已修复 |
 | 🟡 P1 | P1-5 | Spring DI 配置不完整 | 小 | ✅ 已修复 |
 | 🟢 P2 | P2-1 | TUGRAPH_BOLT 拼写修正 | 微 | ✅ 已修复 |
 | 🟢 P2 | P2-2 | ThreadPool 溢出保护 | 小 | ✅ 已修复 |
 | 🟢 P2 | P2-3 | 外部服务失败暴露用户 | 小 | ✅ 已修复 |
-| 🟡 P2 | P2-4 | ResultStitcher.buildRows() 简化 | 中 | 🟡 待处理 |
-| 🟢 P2 | P2-5 | 重试机制未实现 | 小 | 🟢 待处理 |
+| 🟡 P2 | P2-4 | ResultStitcher.buildRows() 简化 | 中 | ✅ 已修复 |
+| 🟢 P2 | P2-5 | 重试机制未实现 | 小 | ✅ 已修复 |
 
 > **说明**: 本项目专注于 Cypher 解析和执行计划生成，所有数据源（包括 TuGraph 和外部服务）均使用 `MockExternalAdapter` 模拟，不提供生产级数据源适配器实现。
 
 ---
 
 **文档维护人**: AI Assistant  
-**最后更新**: 2026-04-07
+**创建日期**: 2026-04-07  
+**完成日期**: 2026-04-07

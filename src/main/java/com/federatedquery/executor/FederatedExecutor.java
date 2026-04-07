@@ -1,6 +1,7 @@
 package com.federatedquery.executor;
 
 import com.federatedquery.adapter.*;
+import com.federatedquery.metadata.DataSourceMetadata;
 import com.federatedquery.metadata.MetadataRegistry;
 import com.federatedquery.plan.*;
 import org.slf4j.Logger;
@@ -15,6 +16,8 @@ public class FederatedExecutor {
     private static final Logger log = LoggerFactory.getLogger(FederatedExecutor.class);
     
     private static final long DEFAULT_TIMEOUT_MS = 30000;
+    private static final int DEFAULT_MAX_RETRIES = 3;
+    private static final long RETRY_DELAY_MS = 100;
     private static final int CORE_POOL_SIZE = 10;
     private static final int MAX_POOL_SIZE = 20;
     private static final int QUEUE_CAPACITY = 100;
@@ -121,12 +124,51 @@ public class FederatedExecutor {
                             "External source " + query.getDataSource() + " unavailable"));
         }
         
+        int maxRetries = getMaxRetries(query.getDataSource());
+        return executeWithRetry(adapter, query, maxRetries);
+    }
+    
+    private CompletableFuture<QueryResult> executeWithRetry(DataSourceAdapter adapter, ExternalQuery query, int maxRetries) {
+        return executeWithRetryInternal(adapter, query, maxRetries, 0);
+    }
+    
+    private CompletableFuture<QueryResult> executeWithRetryInternal(DataSourceAdapter adapter, ExternalQuery query, int maxRetries, int attempt) {
         return adapter.execute(query)
                 .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                 .exceptionally(e -> {
-                    log.error("External query timeout after {}ms for data source: {}", timeoutMs, query.getDataSource());
-                    return QueryResult.error("External query timeout after " + timeoutMs + "ms: " + e.getMessage());
+                    if (attempt < maxRetries) {
+                        log.warn("External query attempt {}/{} failed for data source: {}, retrying...", 
+                                attempt + 1, maxRetries + 1, query.getDataSource());
+                        return null;
+                    }
+                    log.error("External query failed after {} attempts for data source: {}", 
+                            maxRetries + 1, query.getDataSource());
+                    return QueryResult.error("External query failed after " + (maxRetries + 1) + 
+                            " attempts: " + e.getMessage());
+                })
+                .thenCompose(result -> {
+                    if (result == null && attempt < maxRetries) {
+                        try {
+                            Thread.sleep(RETRY_DELAY_MS * (attempt + 1));
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            return CompletableFuture.completedFuture(QueryResult.error("Retry interrupted"));
+                        }
+                        return executeWithRetryInternal(adapter, query, maxRetries, attempt + 1);
+                    }
+                    return CompletableFuture.completedFuture(result);
                 });
+    }
+    
+    private int getMaxRetries(String dataSourceName) {
+        if (registry == null) {
+            return DEFAULT_MAX_RETRIES;
+        }
+        
+        return registry.getDataSource(dataSourceName)
+                .map(DataSourceMetadata::getMaxRetries)
+                .filter(retries -> retries > 0)
+                .orElse(DEFAULT_MAX_RETRIES);
     }
     
     private CompletableFuture<QueryResult> executeBatch(BatchRequest batch) {

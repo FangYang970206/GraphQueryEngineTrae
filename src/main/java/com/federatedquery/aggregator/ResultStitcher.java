@@ -49,21 +49,42 @@ public class ResultStitcher {
     private List<Map<String, Object>> buildRows(ExecutionResult execResult, ExecutionPlan plan) {
         List<Map<String, Object>> rows = new ArrayList<>();
         
-        List<QueryResult> allResults = new ArrayList<>();
         for (List<QueryResult> qrList : execResult.getPhysicalResults().values()) {
-            allResults.addAll(qrList);
+            for (QueryResult qr : qrList) {
+                for (GraphEntity entity : qr.getEntities()) {
+                    Map<String, Object> row = new HashMap<>();
+                    String varName = entity.getLabel() != null ? entity.getLabel().toLowerCase() : "entity";
+                    row.put(varName, entity);
+                    rows.add(row);
+                }
+            }
         }
-        allResults.addAll(execResult.getExternalResults());
         
-        if (allResults.isEmpty()) {
-            return rows;
+        for (QueryResult qr : execResult.getExternalResults()) {
+            for (GraphEntity entity : qr.getEntities()) {
+                Map<String, Object> row = new HashMap<>();
+                String varName = entity.getLabel() != null ? entity.getLabel().toLowerCase() : "entity";
+                row.put(varName, entity);
+                rows.add(row);
+            }
         }
         
-        QueryResult first = allResults.get(0);
-        for (GraphEntity entity : first.getEntities()) {
-            Map<String, Object> row = new HashMap<>();
-            row.put(entity.getLabel() != null ? entity.getLabel().toLowerCase() : "entity", entity);
-            rows.add(row);
+        for (QueryResult qr : execResult.getBatchResults().values()) {
+            for (GraphEntity entity : qr.getEntities()) {
+                Map<String, Object> row = new HashMap<>();
+                String varName = entity.getLabel() != null ? entity.getLabel().toLowerCase() : "entity";
+                row.put(varName, entity);
+                rows.add(row);
+            }
+        }
+        
+        for (QueryResult qr : execResult.getUnionResults().values()) {
+            for (GraphEntity entity : qr.getEntities()) {
+                Map<String, Object> row = new HashMap<>();
+                String varName = entity.getLabel() != null ? entity.getLabel().toLowerCase() : "entity";
+                row.put(varName, entity);
+                rows.add(row);
+            }
         }
         
         return rows;
