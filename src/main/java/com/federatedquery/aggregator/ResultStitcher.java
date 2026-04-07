@@ -5,9 +5,11 @@ import com.federatedquery.adapter.QueryResult;
 import com.federatedquery.executor.ExecutionResult;
 import com.federatedquery.plan.ExecutionPlan;
 import com.federatedquery.plan.GlobalContext;
+import org.springframework.stereotype.Component;
 
 import java.util.*;
 
+@Component
 public class ResultStitcher {
     
     public StitchedResult stitch(ExecutionResult executionResult, ExecutionPlan plan) {

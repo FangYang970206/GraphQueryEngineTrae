@@ -134,6 +134,41 @@ QueryRewriter.analyze() → GlobalContext.pendingFilters (isVirtual=true)
 
 ---
 
+### [P1-5] Spring 依赖注入配置不完整
+
+**问题描述**:  
+以下类缺少 `@Component` 注解，无法被 Spring 容器管理和注入：
+
+| 类 | 问题 | 被谁依赖 |
+|---|---|---|
+| `ResultStitcher` | 缺少 `@Component` | GraphQuerySDK |
+| `GlobalSorter` | 缺少 `@Component` | GraphQuerySDK |
+| `UnionDeduplicator` | 缺少 `@Component` | GraphQuerySDK |
+
+此外，以下类在构造函数中使用 `new` 创建依赖对象，绕过了 Spring DI：
+
+| 类 | 问题 |
+|---|---|
+| `CypherParserFacade` | 构造函数中 `new CypherASTVisitor()` |
+| `QueryRewriter` | 构造函数中 `new WhereConditionPushdown(registry)` |
+
+**涉及文件**:
+- `src/main/java/com/federatedquery/aggregator/ResultStitcher.java`
+- `src/main/java/com/federatedquery/aggregator/GlobalSorter.java`
+- `src/main/java/com/federatedquery/aggregator/UnionDeduplicator.java`
+- `src/main/java/com/federatedquery/parser/CypherParserFacade.java`
+- `src/main/java/com/federatedquery/rewriter/QueryRewriter.java`
+
+**建议修复**:
+1. 为 `ResultStitcher`、`GlobalSorter`、`UnionDeduplicator` 添加 `@Component` 注解
+2. 修改 `CypherParserFacade` 构造函数，通过构造函数注入 `CypherASTVisitor`
+3. 修改 `QueryRewriter` 构造函数，通过构造函数注入 `WhereConditionPushdown`
+4. 删除冗余的构造函数重载
+
+**状态**: ✅ 已修复
+
+---
+
 ## P2 — 中优先级（代码质量）
 
 ### [P2-1] 拼写错误 — `TUGRAH_BOLT` → `TUGRAPH_BOLT`
@@ -218,19 +253,20 @@ QueryRewriter.analyze() → GlobalContext.pendingFilters (isVirtual=true)
 
 ## 汇总
 
-| 优先级 | 编号 | 问题 | 工作量 |
-|--------|------|------|--------|
-| 🔴 P0 | P0-1 | pendingFilters 过滤未应用 | 小 |
-| 🔴 P0 | P0-2 | deduplicate() 未调用 | 小 |
-| 🟡 P1 | P1-1 | EXPLAIN/PROFILE 未执行 | 小 |
-| 🟡 P1 | P1-2 | unbatch() 空实现 | 小 |
-| 🟡 P1 | P1-3 | 清理 executor/ 重复类 | 中 |
-| 🟡 P1 | P1-4 | 参数化查询安全加固 | 小 |
-| 🟢 P2 | P2-1 | TUGRAH_BOLT 拼写修正 | 微 |
-| 🟢 P2 | P2-2 | ThreadPool 溢出保护 | 小 |
-| 🟢 P2 | P2-3 | 外部服务失败暴露用户 | 小 |
-| 🟡 P2 | P2-4 | ResultStitcher.buildRows() 简化 | 中 |
-| 🟢 P2 | P2-5 | 重试机制未实现 | 小 |
+| 优先级 | 编号 | 问题 | 工作量 | 状态 |
+|--------|------|------|--------|------|
+| 🔴 P0 | P0-1 | pendingFilters 过滤未应用 | 小 | 待处理 |
+| 🔴 P0 | P0-2 | deduplicate() 未调用 | 小 | 待处理 |
+| 🟡 P1 | P1-1 | EXPLAIN/PROFILE 未执行 | 小 | 待处理 |
+| 🟡 P1 | P1-2 | unbatch() 空实现 | 小 | 待处理 |
+| 🟡 P1 | P1-3 | 清理 executor/ 重复类 | 中 | 待处理 |
+| 🟡 P1 | P1-4 | 参数化查询安全加固 | 小 | 待处理 |
+| 🟡 P1 | P1-5 | Spring DI 配置不完整 | 小 | ✅ 已修复 |
+| 🟢 P2 | P2-1 | TUGRAH_BOLT 拼写修正 | 微 | 待处理 |
+| 🟢 P2 | P2-2 | ThreadPool 溢出保护 | 小 | 待处理 |
+| 🟢 P2 | P2-3 | 外部服务失败暴露用户 | 小 | 待处理 |
+| 🟡 P2 | P2-4 | ResultStitcher.buildRows() 简化 | 中 | 待处理 |
+| 🟢 P2 | P2-5 | 重试机制未实现 | 小 | 待处理 |
 
 > **说明**: 本项目专注于 Cypher 解析和执行计划生成，所有数据源（包括 TuGraph 和外部服务）均使用 `MockExternalAdapter` 模拟，不提供生产级数据源适配器实现。
 

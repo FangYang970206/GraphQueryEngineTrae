@@ -1,9 +1,11 @@
 package com.federatedquery.aggregator;
 
 import com.federatedquery.adapter.GraphEntity;
+import org.springframework.stereotype.Component;
 
 import java.util.*;
 
+@Component
 public class UnionDeduplicator {
     
     public List<PathBuilder.Path> deduplicate(List<PathBuilder.Path> paths, boolean distinct) {

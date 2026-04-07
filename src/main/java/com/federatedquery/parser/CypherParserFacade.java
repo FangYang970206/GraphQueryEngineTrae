@@ -19,8 +19,8 @@ public class CypherParserFacade {
     private final CypherASTVisitor astVisitor;
     private final Cache<String, Program> planCache;
     
-    public CypherParserFacade() {
-        this.astVisitor = new CypherASTVisitor();
+    public CypherParserFacade(CypherASTVisitor astVisitor) {
+        this.astVisitor = astVisitor;
         this.planCache = Caffeine.newBuilder()
                 .maximumSize(1000)
                 .expireAfterWrite(1, TimeUnit.HOURS)

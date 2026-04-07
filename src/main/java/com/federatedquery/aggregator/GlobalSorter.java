@@ -2,10 +2,12 @@ package com.federatedquery.aggregator;
 
 import com.federatedquery.adapter.GraphEntity;
 import com.federatedquery.plan.GlobalContext;
+import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Component
 public class GlobalSorter {
     private int defaultLimit = 5000;
     

@@ -12,7 +12,7 @@ class ParserTest {
     
     @BeforeEach
     void setUp() {
-        parser = new CypherParserFacade();
+        parser = new CypherParserFacade(new CypherASTVisitor());
     }
     
     @Test

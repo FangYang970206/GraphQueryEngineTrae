@@ -7,8 +7,10 @@ import com.federatedquery.aggregator.*;
 import com.federatedquery.executor.FederatedExecutor;
 import com.federatedquery.metadata.*;
 import com.federatedquery.parser.CypherParserFacade;
+import com.federatedquery.parser.CypherASTVisitor;
 import com.federatedquery.rewriter.QueryRewriter;
 import com.federatedquery.rewriter.VirtualEdgeDetector;
+import com.federatedquery.reliability.WhereConditionPushdown;
 import com.federatedquery.sdk.GraphQuerySDK;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -127,9 +129,10 @@ class E2ETest {
         tugraphAdapter = new MockExternalAdapter();
         tugraphAdapter.setDataSourceName("tugraph");
         
-        CypherParserFacade parser = new CypherParserFacade();
+        CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor());
         VirtualEdgeDetector detector = new VirtualEdgeDetector(registry);
-        QueryRewriter rewriter = new QueryRewriter(registry, detector);
+        WhereConditionPushdown whereConditionPushdown = new WhereConditionPushdown(registry);
+        QueryRewriter rewriter = new QueryRewriter(registry, detector, whereConditionPushdown);
         FederatedExecutor executor = new FederatedExecutor(registry);
         executor.registerAdapter("kpi-service", kpiAdapter);
         executor.registerAdapter("alarm-service", alarmAdapter);

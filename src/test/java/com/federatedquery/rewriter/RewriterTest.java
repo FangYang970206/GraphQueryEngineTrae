@@ -2,10 +2,12 @@ package com.federatedquery.rewriter;
 
 import com.federatedquery.ast.*;
 import com.federatedquery.metadata.*;
+import com.federatedquery.parser.CypherASTVisitor;
 import com.federatedquery.parser.CypherParserFacade;
 import com.federatedquery.plan.ExecutionPlan;
 import com.federatedquery.plan.PhysicalQuery;
 import com.federatedquery.plan.ExternalQuery;
+import com.federatedquery.reliability.WhereConditionPushdown;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,8 +24,8 @@ class RewriterTest {
     void setUp() {
         registry = new MetadataRegistryImpl();
         detector = new VirtualEdgeDetector(registry);
-        rewriter = new QueryRewriter(registry, detector);
-        parser = new CypherParserFacade();
+        rewriter = new QueryRewriter(registry, detector, new WhereConditionPushdown(registry));
+        parser = new CypherParserFacade(new CypherASTVisitor());
         
         DataSourceMetadata tugraph = new DataSourceMetadata();
         tugraph.setName("tugraph");

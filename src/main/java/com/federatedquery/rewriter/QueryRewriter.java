@@ -16,13 +16,9 @@ public class QueryRewriter {
     private final VirtualEdgeDetector detector;
     private final WhereConditionPushdown whereConditionPushdown;
     
-    public QueryRewriter(MetadataRegistry registry, VirtualEdgeDetector detector) {
-        this.registry = registry;
-        this.detector = detector;
-        this.whereConditionPushdown = new WhereConditionPushdown(registry);
-    }
-    
-    public QueryRewriter(MetadataRegistry registry, VirtualEdgeDetector detector, WhereConditionPushdown whereConditionPushdown) {
+    public QueryRewriter(MetadataRegistry registry, 
+                        VirtualEdgeDetector detector,
+                        WhereConditionPushdown whereConditionPushdown) {
         this.registry = registry;
         this.detector = detector;
         this.whereConditionPushdown = whereConditionPushdown;
