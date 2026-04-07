@@ -968,4 +968,163 @@ class E2ETest {
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(2, json.size(), "SKIP 1 LIMIT 2 应该返回2条记录");
     }
+    
+    @Test
+    @DisplayName("UNWIND 子句解析测试")
+    void unwindClauseTest() throws Exception {
+        String cypher = "UNWIND [1, 2, 3] AS x RETURN x";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+    }
+    
+    @Test
+    @DisplayName("OPTIONAL MATCH 解析测试")
+    void optionalMatchTest() throws Exception {
+        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
+        ne.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(ne));
+        
+        String cypher = "OPTIONAL MATCH (n:NetworkElement) RETURN n";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+    }
+    
+    @Test
+    @DisplayName("IN 操作符测试")
+    void inOperatorTest() throws Exception {
+        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
+        ne1.setVariableName("n");
+        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
+        ne2.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(ne1)
+                .addEntity(ne2));
+        
+        String cypher = "MATCH (n:NetworkElement) WHERE n.name IN ['NE001', 'NE003'] RETURN n";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+    }
+    
+    @Test
+    @DisplayName("IS NULL 判断测试")
+    void isNullTest() throws Exception {
+        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
+        ne.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(ne));
+        
+        String cypher = "MATCH (n:NetworkElement) WHERE n.name IS NOT NULL RETURN n";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+    }
+    
+    @Test
+    @DisplayName("STARTS WITH 字符串匹配测试")
+    void startsWithTest() throws Exception {
+        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
+        ne1.setVariableName("n");
+        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
+        ne2.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(ne1)
+                .addEntity(ne2));
+        
+        String cypher = "MATCH (n:NetworkElement) WHERE n.name STARTS WITH 'NE' RETURN n";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+    }
+    
+    @Test
+    @DisplayName("ENDS WITH 字符串匹配测试")
+    void endsWithTest() throws Exception {
+        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
+        ne1.setVariableName("n");
+        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
+        ne2.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(ne1)
+                .addEntity(ne2));
+        
+        String cypher = "MATCH (n:NetworkElement) WHERE n.name ENDS WITH '01' RETURN n";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+    }
+    
+    @Test
+    @DisplayName("CONTAINS 字符串匹配测试")
+    void containsTest() throws Exception {
+        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
+        ne1.setVariableName("n");
+        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
+        ne2.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(ne1)
+                .addEntity(ne2));
+        
+        String cypher = "MATCH (n:NetworkElement) WHERE n.name CONTAINS 'E00' RETURN n";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+    }
+    
+    @Test
+    @DisplayName("CASE 表达式测试")
+    void caseExpressionTest() throws Exception {
+        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
+        ne1.setVariableName("n");
+        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
+        ne2.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(ne1)
+                .addEntity(ne2));
+        
+        String cypher = "MATCH (n:NetworkElement) RETURN n.name, CASE WHEN n.type = 'Router' THEN 'R' ELSE 'S' END AS typeCode";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+    }
+    
+    @Test
+    @DisplayName("count 聚合函数测试")
+    void countFunctionTest() throws Exception {
+        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
+        ne1.setVariableName("n");
+        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
+        ne2.setVariableName("n");
+        GraphEntity ne3 = createNEEntity("ne3", "NE003", "Router");
+        ne3.setVariableName("n");
+        
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(ne1)
+                .addEntity(ne2)
+                .addEntity(ne3));
+        
+        String cypher = "MATCH (n:NetworkElement) RETURN count(n) AS total";
+        
+        String result = sdk.executeRaw(cypher);
+        
+        assertNotNull(result, "结果不能为空");
+    }
 }
