@@ -97,6 +97,10 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
                 MatchClause match = visitOC_Match(readingCtx.oC_Match());
                 singleQuery.getMatchClauses().add(match);
             }
+            if (readingCtx.oC_Unwind() != null) {
+                UnwindClause unwind = visitOC_Unwind(readingCtx.oC_Unwind());
+                singleQuery.addUnwindClause(unwind);
+            }
         }
         
         if (ctx.oC_Return() != null) {
@@ -225,6 +229,13 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
         }
         
         return match;
+    }
+    
+    public UnwindClause visitOC_Unwind(LcypherParser.OC_UnwindContext ctx) {
+        UnwindClause unwind = new UnwindClause();
+        unwind.setExpression(visitOC_Expression(ctx.oC_Expression()));
+        unwind.setVariable(ctx.oC_Variable().getText());
+        return unwind;
     }
     
     @Override

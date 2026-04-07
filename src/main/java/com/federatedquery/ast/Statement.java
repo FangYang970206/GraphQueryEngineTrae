@@ -116,6 +116,7 @@ public class Statement implements AstNode {
     
     public static class SingleQuery implements AstNode {
         private List<MatchClause> matchClauses = new ArrayList<>();
+        private List<UnwindClause> unwindClauses = new ArrayList<>();
         private ReturnClause returnClause;
         private WithClause withClause;
         private WhereClause whereClause;
@@ -136,6 +137,18 @@ public class Statement implements AstNode {
         
         public void setMatchClauses(List<MatchClause> matchClauses) {
             this.matchClauses = matchClauses;
+        }
+        
+        public List<UnwindClause> getUnwindClauses() {
+            return unwindClauses;
+        }
+        
+        public void setUnwindClauses(List<UnwindClause> unwindClauses) {
+            this.unwindClauses = unwindClauses;
+        }
+        
+        public void addUnwindClause(UnwindClause unwindClause) {
+            this.unwindClauses.add(unwindClause);
         }
         
         public ReturnClause getReturnClause() {
@@ -220,6 +233,10 @@ public class Statement implements AstNode {
                 if (i < precedingWithClauses.size()) {
                     sb.append(precedingWithClauses.get(i).toCypher()).append(" ");
                 }
+            }
+            
+            for (UnwindClause unwind : unwindClauses) {
+                sb.append(unwind.toCypher()).append(" ");
             }
             
             for (MatchClause match : matchClauses) {

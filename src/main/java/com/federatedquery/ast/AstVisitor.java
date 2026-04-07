@@ -6,6 +6,7 @@ public interface AstVisitor<T> {
     T visit(Statement.Query query);
     T visit(Statement.SingleQuery singleQuery);
     T visit(MatchClause matchClause);
+    T visit(UnwindClause unwindClause);
     T visit(ReturnClause returnClause);
     T visit(WithClause withClause);
     T visit(WhereClause whereClause);
