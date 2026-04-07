@@ -6,10 +6,13 @@ import com.federatedquery.adapter.GraphEntity;
 import com.federatedquery.adapter.QueryResult;
 import com.federatedquery.aggregator.*;
 import com.federatedquery.ast.*;
+import com.federatedquery.ast.UnionClause;
 import com.federatedquery.executor.ExecutionResult;
 import com.federatedquery.parser.CypherParserFacade;
 import com.federatedquery.plan.ExecutionPlan;
 import com.federatedquery.plan.GlobalContext;
+import com.federatedquery.plan.PhysicalQuery;
+import com.federatedquery.plan.ExternalQuery;
 import com.federatedquery.rewriter.QueryRewriter;
 import com.federatedquery.executor.FederatedExecutor;
 import org.slf4j.Logger;
@@ -51,6 +54,14 @@ public class GraphQuerySDK {
         try {
             Program ast = parser.parseCached(cypher);
             
+            if (ast.getStatement() != null && ast.getStatement().isExplain()) {
+                return buildExplainResponse(ast);
+            }
+            
+            if (ast.getStatement() != null && ast.getStatement().isProfile()) {
+                return executeWithProfile(cypher, ast);
+            }
+            
             ExecutionPlan plan = rewriter.rewrite(ast);
             
             ExecutionResult execResult = executor.execute(plan).join();
@@ -59,7 +70,19 @@ public class GraphQuerySDK {
             
             List<Map<String, Object>> results = buildTuGraphFormatResults(ast, stitched, execResult);
             
+            results = applyPendingFilters(results, stitched.getPendingFilters());
+            
             results = applyGlobalSortAndPagination(results, plan.getGlobalContext());
+            
+            results = applyDeduplication(results, ast);
+            
+            List<String> warnings = collectWarnings(execResult);
+            if (!warnings.isEmpty()) {
+                Map<String, Object> response = new LinkedHashMap<>();
+                response.put("results", results);
+                response.put("warnings", warnings);
+                return objectMapper.writeValueAsString(response);
+            }
             
             return objectMapper.writeValueAsString(results);
             
@@ -77,7 +100,11 @@ public class GraphQuerySDK {
             
             List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult, execResult);
             
+            results = applyPendingFilters(results, plan.getGlobalContext().getPendingFilters());
+            
             results = applyGlobalSortAndPagination(results, plan.getGlobalContext());
+            
+            results = applyDeduplication(results, ast);
             
             return objectMapper.writeValueAsString(results);
         } catch (Exception e) {
@@ -124,6 +151,123 @@ public class GraphQuerySDK {
             return value.toString();
         }
         return "'" + value.toString().replace("'", "\\'") + "'";
+    }
+    
+    private List<Map<String, Object>> applyPendingFilters(List<Map<String, Object>> results, List<GlobalContext.WhereCondition> pendingFilters) {
+        if (pendingFilters == null || pendingFilters.isEmpty()) {
+            return results;
+        }
+        
+        List<Map<String, Object>> filtered = new ArrayList<>();
+        
+        for (Map<String, Object> row : results) {
+            if (matchesAllConditions(row, pendingFilters)) {
+                filtered.add(row);
+            }
+        }
+        
+        return filtered;
+    }
+    
+    private boolean matchesAllConditions(Map<String, Object> row, List<GlobalContext.WhereCondition> conditions) {
+        for (GlobalContext.WhereCondition condition : conditions) {
+            if (!matchesCondition(row, condition)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    
+    private boolean matchesCondition(Map<String, Object> row, GlobalContext.WhereCondition condition) {
+        String variable = condition.getVariable();
+        String property = condition.getProperty();
+        String operator = condition.getOperator();
+        Object expectedValue = condition.getValue();
+        
+        Object entityObj = row.get(variable);
+        if (entityObj == null) {
+            return false;
+        }
+        
+        Object actualValue = null;
+        if (entityObj instanceof Map) {
+            Map<String, Object> entityMap = (Map<String, Object>) entityObj;
+            actualValue = entityMap.get(property);
+        } else if (entityObj instanceof GraphEntity) {
+            GraphEntity entity = (GraphEntity) entityObj;
+            actualValue = entity.getProperty(property);
+        }
+        
+        return evaluateCondition(actualValue, operator, expectedValue);
+    }
+    
+    private boolean evaluateCondition(Object actualValue, String operator, Object expectedValue) {
+        if (actualValue == null && expectedValue == null) {
+            return "=".equals(operator) || "IS".equals(operator);
+        }
+        if (actualValue == null) {
+            return false;
+        }
+        
+        switch (operator) {
+            case "=":
+            case "==":
+                return actualValue.equals(expectedValue) || 
+                       (actualValue instanceof Number && expectedValue instanceof Number &&
+                        ((Number) actualValue).doubleValue() == ((Number) expectedValue).doubleValue());
+            case "<>":
+            case "!=":
+                return !actualValue.equals(expectedValue);
+            case ">":
+                return compareValues(actualValue, expectedValue) > 0;
+            case ">=":
+                return compareValues(actualValue, expectedValue) >= 0;
+            case "<":
+                return compareValues(actualValue, expectedValue) < 0;
+            case "<=":
+                return compareValues(actualValue, expectedValue) <= 0;
+            case "IN":
+                if (expectedValue instanceof Collection) {
+                    return ((Collection<?>) expectedValue).contains(actualValue);
+                }
+                return false;
+            case "CONTAINS":
+                return actualValue.toString().contains(expectedValue.toString());
+            case "STARTS WITH":
+                return actualValue.toString().startsWith(expectedValue.toString());
+            case "ENDS WITH":
+                return actualValue.toString().endsWith(expectedValue.toString());
+            default:
+                return actualValue.equals(expectedValue);
+        }
+    }
+    
+    private int compareValues(Object v1, Object v2) {
+        if (v1 instanceof Comparable && v2 instanceof Comparable) {
+            if (v1 instanceof Number && v2 instanceof Number) {
+                return Double.compare(((Number) v1).doubleValue(), ((Number) v2).doubleValue());
+            }
+            return ((Comparable) v1).compareTo(v2);
+        }
+        return v1.toString().compareTo(v2.toString());
+    }
+    
+    private List<Map<String, Object>> applyDeduplication(List<Map<String, Object>> results, Program ast) {
+        if (ast == null || ast.getStatement() == null || ast.getStatement().getQuery() == null) {
+            return results;
+        }
+        
+        List<UnionClause> unions = ast.getStatement().getQuery().getUnions();
+        if (unions == null || unions.isEmpty()) {
+            return results;
+        }
+        
+        boolean hasUnionAll = unions.stream().anyMatch(UnionClause::isAll);
+        if (hasUnionAll) {
+            return results;
+        }
+        
+        return deduplicator.deduplicateRows(results, true);
     }
     
     private List<Map<String, Object>> applyGlobalSortAndPagination(List<Map<String, Object>> results, GlobalContext context) {
@@ -637,6 +781,107 @@ public class GraphQuerySDK {
         pathMap.put("relationships", relList);
         
         return pathMap;
+    }
+    
+    private String buildExplainResponse(Program ast) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("type", "explain");
+        response.put("originalCypher", ast.toCypher());
+        
+        try {
+            ExecutionPlan plan = rewriter.rewrite(ast);
+            
+            List<Map<String, Object>> physicalQueries = new ArrayList<>();
+            for (PhysicalQuery pq : plan.getPhysicalQueries()) {
+                Map<String, Object> pqInfo = new LinkedHashMap<>();
+                pqInfo.put("id", pq.getId());
+                pqInfo.put("cypher", pq.getCypher());
+                physicalQueries.add(pqInfo);
+            }
+            
+            List<Map<String, Object>> externalQueries = new ArrayList<>();
+            for (ExternalQuery eq : plan.getExternalQueries()) {
+                Map<String, Object> eqInfo = new LinkedHashMap<>();
+                eqInfo.put("id", eq.getId());
+                eqInfo.put("dataSource", eq.getDataSource());
+                eqInfo.put("operator", eq.getOperator());
+                eqInfo.put("inputIds", eq.getInputIds());
+                externalQueries.add(eqInfo);
+            }
+            
+            response.put("physicalQueries", physicalQueries);
+            response.put("externalQueries", externalQueries);
+            response.put("hasVirtualElements", plan.hasVirtualElements());
+            
+            return objectMapper.writeValueAsString(response);
+        } catch (Exception e) {
+            return buildErrorResponse(e);
+        }
+    }
+    
+    private String executeWithProfile(String cypher, Program ast) {
+        long startTime = System.currentTimeMillis();
+        
+        try {
+            ExecutionPlan plan = rewriter.rewrite(ast);
+            
+            ExecutionResult execResult = executor.execute(plan).join();
+            
+            long executionTime = System.currentTimeMillis() - startTime;
+            
+            StitchedResult stitched = stitcher.stitch(execResult, plan);
+            
+            List<Map<String, Object>> results = buildTuGraphFormatResults(ast, stitched, execResult);
+            
+            results = applyPendingFilters(results, stitched.getPendingFilters());
+            
+            results = applyGlobalSortAndPagination(results, plan.getGlobalContext());
+            
+            results = applyDeduplication(results, ast);
+            
+            Map<String, Object> profileResponse = new LinkedHashMap<>();
+            profileResponse.put("type", "profile");
+            profileResponse.put("originalCypher", cypher);
+            profileResponse.put("executionTimeMs", executionTime);
+            profileResponse.put("resultCount", results.size());
+            profileResponse.put("results", results);
+            
+            return objectMapper.writeValueAsString(profileResponse);
+        } catch (Exception e) {
+            return buildErrorResponse(e);
+        }
+    }
+    
+    private List<String> collectWarnings(ExecutionResult execResult) {
+        List<String> warnings = new ArrayList<>();
+        
+        if (execResult == null) {
+            return warnings;
+        }
+        
+        warnings.addAll(execResult.getWarnings());
+        
+        for (List<QueryResult> results : execResult.getPhysicalResults().values()) {
+            for (QueryResult qr : results) {
+                if (qr.getWarnings() != null) {
+                    warnings.addAll(qr.getWarnings().values());
+                }
+            }
+        }
+        
+        for (QueryResult qr : execResult.getBatchResults().values()) {
+            if (qr.getWarnings() != null) {
+                warnings.addAll(qr.getWarnings().values());
+            }
+        }
+        
+        for (QueryResult qr : execResult.getExternalResults()) {
+            if (qr.getWarnings() != null) {
+                warnings.addAll(qr.getWarnings().values());
+            }
+        }
+        
+        return warnings;
     }
     
     private String buildErrorResponse(Exception e) {

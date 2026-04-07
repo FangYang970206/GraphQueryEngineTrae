@@ -15,6 +15,10 @@ public class FederatedExecutor {
     private static final Logger log = LoggerFactory.getLogger(FederatedExecutor.class);
     
     private static final long DEFAULT_TIMEOUT_MS = 30000;
+    private static final int CORE_POOL_SIZE = 10;
+    private static final int MAX_POOL_SIZE = 20;
+    private static final int QUEUE_CAPACITY = 100;
+    private static final long KEEP_ALIVE_TIME = 60L;
     
     private final MetadataRegistry registry;
     private final Map<String, DataSourceAdapter> adapters;
@@ -25,7 +29,14 @@ public class FederatedExecutor {
     public FederatedExecutor(MetadataRegistry registry) {
         this.registry = registry;
         this.adapters = new ConcurrentHashMap<>();
-        this.executorService = Executors.newFixedThreadPool(10);
+        this.executorService = new ThreadPoolExecutor(
+                CORE_POOL_SIZE,
+                MAX_POOL_SIZE,
+                KEEP_ALIVE_TIME,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(QUEUE_CAPACITY),
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
         this.batchingStrategy = new BatchingStrategy();
     }
     
@@ -143,9 +154,6 @@ public class FederatedExecutor {
                     return QueryResult.error("Batch query timeout after " + timeoutMs + "ms: " + e.getMessage());
                 })
                 .thenApply(result -> {
-                    if (result.isSuccess()) {
-                        return batchingStrategy.unbatch(batch, result);
-                    }
                     return result;
                 });
     }

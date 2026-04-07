@@ -1,6 +1,7 @@
 package com.federatedquery.executor;
 
 import com.federatedquery.adapter.GraphEntity;
+import com.federatedquery.adapter.QueryResult;
 import com.federatedquery.plan.ExternalQuery;
 
 import java.util.*;
@@ -77,8 +78,57 @@ public class BatchingStrategy {
         return batches;
     }
     
-    public com.federatedquery.adapter.QueryResult unbatch(BatchRequest batch, com.federatedquery.adapter.QueryResult batchResult) {
-        return batchResult;
+    public List<QueryResult> unbatch(BatchRequest batch, QueryResult batchResult) {
+        List<QueryResult> results = new ArrayList<>();
+        
+        List<ExternalQuery> originalQueries = batch.getOriginalQueries();
+        if (originalQueries == null || originalQueries.isEmpty()) {
+            results.add(batchResult);
+            return results;
+        }
+        
+        List<GraphEntity> allEntities = batchResult.getEntities();
+        if (allEntities == null || allEntities.isEmpty()) {
+            for (ExternalQuery original : originalQueries) {
+                QueryResult qr = new QueryResult();
+                qr.setSuccess(true);
+                qr.setEntities(new ArrayList<>());
+                results.add(qr);
+            }
+            return results;
+        }
+        
+        int totalEntities = allEntities.size();
+        int queriesCount = originalQueries.size();
+        
+        if (queriesCount == 1) {
+            QueryResult qr = new QueryResult();
+            qr.setSuccess(true);
+            qr.setEntities(new ArrayList<>(allEntities));
+            results.add(qr);
+            return results;
+        }
+        
+        int entitiesPerQuery = (int) Math.ceil((double) totalEntities / queriesCount);
+        
+        int entityIndex = 0;
+        for (ExternalQuery original : originalQueries) {
+            QueryResult qr = new QueryResult();
+            qr.setSuccess(true);
+            
+            List<GraphEntity> queryEntities = new ArrayList<>();
+            int inputIdCount = original.getInputIds() != null ? original.getInputIds().size() : 0;
+            
+            for (int i = 0; i < Math.min(inputIdCount, entitiesPerQuery) && entityIndex < totalEntities; i++) {
+                queryEntities.add(allEntities.get(entityIndex));
+                entityIndex++;
+            }
+            
+            qr.setEntities(queryEntities);
+            results.add(qr);
+        }
+        
+        return results;
     }
     
     public int getMaxBatchSize() {

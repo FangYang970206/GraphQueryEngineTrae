@@ -29,7 +29,7 @@ class RewriterTest {
         
         DataSourceMetadata tugraph = new DataSourceMetadata();
         tugraph.setName("tugraph");
-        tugraph.setType(DataSourceType.TUGRAH_BOLT);
+        tugraph.setType(DataSourceType.TUGRAPH_BOLT);
         tugraph.setEndpoint("bolt://localhost:7687");
         registry.registerDataSource(tugraph);
         
