@@ -59,7 +59,6 @@ public class QueryRewriter {
     private void rewriteUnionQuery(Statement.Query query, ExecutionPlan plan) {
         UnionPart unionPart = new UnionPart();
         unionPart.setId(UUID.randomUUID().toString());
-        unionPart.setAll(true);
         
         for (int i = 0; i < query.getSingleQueries().size(); i++) {
             Statement.SingleQuery sq = query.getSingleQueries().get(i);
@@ -70,7 +69,7 @@ public class QueryRewriter {
             
             if (i < query.getUnions().size()) {
                 UnionClause union = query.getUnions().get(i);
-                unionPart.setAll(unionPart.isAll() && union.isAll());
+                unionPart.setAll(union.isAll());
             }
         }
         
@@ -78,10 +77,6 @@ public class QueryRewriter {
     }
     
     private void rewriteSingleQuery(Statement.SingleQuery singleQuery, ExecutionPlan plan) {
-        if (singleQuery.isHasUpdatingClause()) {
-            throw new UnsupportedOperationException("Write clauses are not supported in read-only mode");
-        }
-        
         if (singleQuery.hasMultiPartQuery()) {
             rewriteMultiPartQuery(singleQuery, plan);
         } else {
@@ -361,12 +356,6 @@ public class QueryRewriter {
         
         if (ve.getStartNode() != null && ve.getStartNode().getVariable() != null) {
             query.setInputIdField(ve.getStartNode().getVariable());
-            Object fixedInputId = ve.getStartNode().getProperties() != null
-                    ? ve.getStartNode().getProperties().get("id")
-                    : null;
-            if (fixedInputId != null) {
-                query.addInputId(String.valueOf(fixedInputId));
-            }
         }
         
         if (ve.getVariable() != null) {

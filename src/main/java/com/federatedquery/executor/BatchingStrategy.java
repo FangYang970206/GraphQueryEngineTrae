@@ -13,17 +13,18 @@ public class BatchingStrategy {
         Map<String, List<ExternalQuery>> grouped = new HashMap<>();
         
         for (ExternalQuery q : queries) {
-            String key = buildGroupKey(q);
+            String key = q.getDataSource() + ":" + q.getOperator();
             grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(q);
         }
         
         List<BatchRequest> batches = new ArrayList<>();
         
         for (Map.Entry<String, List<ExternalQuery>> entry : grouped.entrySet()) {
+            String[] parts = entry.getKey().split(":");
+            String dataSource = parts[0];
+            String operator = parts[1];
+            
             List<ExternalQuery> groupQueries = entry.getValue();
-            ExternalQuery first = groupQueries.get(0);
-            String dataSource = first.getDataSource();
-            String operator = first.getOperator();
             
             List<String> allInputIds = new ArrayList<>();
             String inputIdField = null;
@@ -52,10 +53,6 @@ public class BatchingStrategy {
                 batch.setInputIdField(inputIdField);
                 batch.setOutputFields(new ArrayList<>(outputFields));
                 batch.setOutputVariables(new ArrayList<>(outputVariables));
-                batch.setFilters(new HashMap<>(first.getFilters()));
-                batch.setParameters(new HashMap<>(first.getParameters()));
-                batch.setSnapshotName(first.getSnapshotName());
-                batch.setSnapshotTime(first.getSnapshotTime());
                 batch.setOriginalQueries(groupQueries);
                 batches.add(batch);
             } else {
@@ -71,10 +68,6 @@ public class BatchingStrategy {
                     batch.setInputIdField(inputIdField);
                     batch.setOutputFields(new ArrayList<>(outputFields));
                     batch.setOutputVariables(new ArrayList<>(outputVariables));
-                    batch.setFilters(new HashMap<>(first.getFilters()));
-                    batch.setParameters(new HashMap<>(first.getParameters()));
-                    batch.setSnapshotName(first.getSnapshotName());
-                    batch.setSnapshotTime(first.getSnapshotTime());
                     batch.setOriginalQueries(groupQueries);
                     
                     batches.add(batch);
@@ -125,9 +118,8 @@ public class BatchingStrategy {
             
             List<GraphEntity> queryEntities = new ArrayList<>();
             int inputIdCount = original.getInputIds() != null ? original.getInputIds().size() : 0;
-            int expectedCount = inputIdCount > 0 ? Math.min(inputIdCount, entitiesPerQuery) : entitiesPerQuery;
             
-            for (int i = 0; i < expectedCount && entityIndex < totalEntities; i++) {
+            for (int i = 0; i < Math.min(inputIdCount, entitiesPerQuery) && entityIndex < totalEntities; i++) {
                 queryEntities.add(allEntities.get(entityIndex));
                 entityIndex++;
             }
@@ -137,25 +129,6 @@ public class BatchingStrategy {
         }
         
         return results;
-    }
-    
-    private String buildGroupKey(ExternalQuery q) {
-        return String.join("|",
-                Objects.toString(q.getDataSource(), ""),
-                Objects.toString(q.getOperator(), ""),
-                Objects.toString(q.getInputIdField(), ""),
-                Objects.toString(q.getSnapshotName(), ""),
-                Objects.toString(q.getSnapshotTime(), ""),
-                normalizeMap(q.getFilters()),
-                normalizeMap(q.getParameters()));
-    }
-    
-    private String normalizeMap(Map<String, Object> source) {
-        if (source == null || source.isEmpty()) {
-            return "";
-        }
-        TreeMap<String, Object> sorted = new TreeMap<>(source);
-        return sorted.toString();
     }
     
     public int getMaxBatchSize() {

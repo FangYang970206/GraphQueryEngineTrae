@@ -210,10 +210,6 @@ public class FederatedExecutor {
         combinedQuery.setInputIdField(batch.getInputIdField());
         combinedQuery.setOutputFields(batch.getOutputFields());
         combinedQuery.setOutputVariables(batch.getOutputVariables());
-        combinedQuery.setFilters(batch.getFilters());
-        combinedQuery.setParameters(batch.getParameters());
-        combinedQuery.setSnapshotName(batch.getSnapshotName());
-        combinedQuery.setSnapshotTime(batch.getSnapshotTime());
         combinedQuery.setBatched(true);
         
         return runOnExecutor(() -> adapter.execute(combinedQuery))

@@ -113,7 +113,7 @@ public class VirtualEdgeDetector {
                 result.addVirtualEdgePart(part);
             } else {
                 PhysicalEdgePart part = new PhysicalEdgePart();
-                part.setEdgeTypes(java.util.Collections.singletonList(relType));
+                part.setEdgeTypes(rel.getRelationshipTypes());
                 part.setVariable(rel.getVariable());
                 part.setStartNode(startNode);
                 part.setEndNode(endNode);
@@ -125,12 +125,20 @@ public class VirtualEdgeDetector {
     }
     
     private void validateConstraints(DetectionResult result) {
+        List<EdgePart> allEdges = new ArrayList<>();
+        for (PhysicalEdgePart p : result.getPhysicalEdgeParts()) {
+            allEdges.add(new EdgePart(p, false));
+        }
+        for (VirtualEdgePart v : result.getVirtualEdgeParts()) {
+            allEdges.add(new EdgePart(v, true));
+        }
+        
         boolean foundPhysical = false;
         boolean foundVirtual = false;
         boolean foundPhysicalAfterVirtual = false;
         
-        for (Boolean isVirtual : result.getEdgeVirtualSequence()) {
-            if (Boolean.TRUE.equals(isVirtual)) {
+        for (EdgePart edge : allEdges) {
+            if (edge.isVirtual) {
                 if (foundPhysical && foundPhysicalAfterVirtual) {
                     result.addError("Invalid pattern: [physical]->[virtual]->[physical] sandwich structure is not allowed");
                     break;
@@ -145,12 +153,21 @@ public class VirtualEdgeDetector {
         }
     }
     
+    private static class EdgePart {
+        final Object part;
+        final boolean isVirtual;
+        
+        EdgePart(Object part, boolean isVirtual) {
+            this.part = part;
+            this.isVirtual = isVirtual;
+        }
+    }
+    
     public static class DetectionResult {
         private List<PhysicalNodePart> physicalNodeParts = new ArrayList<>();
         private List<PhysicalEdgePart> physicalEdgeParts = new ArrayList<>();
         private List<VirtualNodePart> virtualNodeParts = new ArrayList<>();
         private List<VirtualEdgePart> virtualEdgeParts = new ArrayList<>();
-        private List<Boolean> edgeVirtualSequence = new ArrayList<>();
         private List<String> errors = new ArrayList<>();
         
         public List<PhysicalNodePart> getPhysicalNodeParts() {
@@ -167,7 +184,6 @@ public class VirtualEdgeDetector {
         
         public void addPhysicalEdgePart(PhysicalEdgePart part) {
             this.physicalEdgeParts.add(part);
-            this.edgeVirtualSequence.add(false);
         }
         
         public List<VirtualNodePart> getVirtualNodeParts() {
@@ -184,11 +200,6 @@ public class VirtualEdgeDetector {
         
         public void addVirtualEdgePart(VirtualEdgePart part) {
             this.virtualEdgeParts.add(part);
-            this.edgeVirtualSequence.add(true);
-        }
-        
-        public List<Boolean> getEdgeVirtualSequence() {
-            return edgeVirtualSequence;
         }
         
         public List<String> getErrors() {

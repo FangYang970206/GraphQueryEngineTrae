@@ -92,10 +92,6 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     }
     
     private void visitOC_SinglePartQuery(LcypherParser.OC_SinglePartQueryContext ctx, Statement.SingleQuery singleQuery) {
-        if (!ctx.oC_UpdatingClause().isEmpty()) {
-            singleQuery.setHasUpdatingClause(true);
-        }
-        
         for (LcypherParser.OC_ReadingClauseContext readingCtx : ctx.oC_ReadingClause()) {
             if (readingCtx.oC_Match() != null) {
                 MatchClause match = visitOC_Match(readingCtx.oC_Match());
@@ -113,10 +109,6 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     }
     
     private void visitOC_MultiPartQuery(LcypherParser.OC_MultiPartQueryContext ctx, Statement.SingleQuery singleQuery) {
-        if (!ctx.oC_UpdatingClause().isEmpty()) {
-            singleQuery.setHasUpdatingClause(true);
-        }
-        
         List<LcypherParser.OC_ReadingClauseContext> allReadingClauses = new ArrayList<>();
         List<LcypherParser.OC_WithContext> withClauses = new ArrayList<>();
         List<LcypherParser.OC_WhereContext> withWhereClauses = new ArrayList<>();
