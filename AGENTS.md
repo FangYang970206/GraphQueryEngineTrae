@@ -84,12 +84,16 @@ The `MockExternalAdapter` (`src/test/java/.../adapter/MockExternalAdapter.java`)
 
 ### UT Strict Validation Requirements
 
-**All end-to-end tests MUST follow these validation rules:**
+**All unit tests and end-to-end tests MUST follow these validation rules:**
 
-1. **No vague assertions**: Do NOT use `json.size() > 0` or `if (json.size() > 0)` to bypass validation
-2. **Exact count validation**: MUST use `assertEquals(expectedSize, json.size(), "Result count must be X")`
-3. **Content completeness validation**: MUST verify every field value in returned results
-4. **Field existence validation**: MUST use `assertTrue(row.has("fieldName"), "fieldName field is required")`
+1. **No weak assertions as primary validation**: Do NOT rely on `assertNotNull(...)`, `assertTrue(...)`, or `assertFalse(...)` alone to claim functional correctness
+2. **No non-empty bypasses**: Do NOT use `json.size() > 0`, `list.size() > 0`, or `if (size > 0)` as acceptance criteria
+3. **Exact cardinality is mandatory**: Always use `assertEquals(expectedSize, actualSize, ...)` for result counts
+4. **Field-by-field validation is mandatory**: For each row, assert both field existence and exact expected value for all key fields
+5. **Semantic assertions are mandatory**: Sorting, deduplication, pagination, filtering, and UNION semantics must be asserted explicitly
+6. **Error-path assertions are mandatory**: Exception type, error message, and warning payloads must be asserted with concrete expectations
+7. **`assertNotNull` boundary**: Allowed only as a guard (for example after `readTree`); never as final acceptance
+8. **`assertTrue` boundary**: Allowed for boolean semantics or field presence (for example `row.has("field")`); never for vague non-empty checks
 
 **Correct Example**:
 ```java
@@ -113,9 +117,23 @@ assertTrue(json.size() > 0, "Result array cannot be empty");
 // ❌ FORBIDDEN: Conditional bypass
 if (json.size() > 0) {
     JsonNode firstRow = json.get(0);
-    // ...
 }
+
+// ❌ FORBIDDEN: Non-null as final acceptance
+assertNotNull(result);
+
+// ❌ FORBIDDEN: Generic success assertion without content checks
+assertTrue(executionResult.isSuccess());
 ```
+
+**Review Gate (Mandatory)**:
+1. Every added/updated UT must document which fields are validated and what each expected value is
+2. If assertions do not cover key fields or core semantics, the review must reject the change
+3. If exact-value assertions are impossible, the test must state the reason and add a strong semantic alternative assertion
+4. Pre-commit self-check must search and clean the following patterns  
+   - `assertTrue(.*size\\(\\)\\s*>\\s*0`  
+   - `if\\s*\\(.*size\\(\\)\\s*>\\s*0\\)`  
+   - cases with only `assertNotNull`/`assertTrue` and no `assertEquals` value assertions
 
 ## Spring Usage
 

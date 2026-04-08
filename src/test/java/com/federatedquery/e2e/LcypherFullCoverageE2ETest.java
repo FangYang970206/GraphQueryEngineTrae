@@ -2,838 +2,319 @@ package com.federatedquery.e2e;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.federatedquery.adapter.*;
-import com.federatedquery.aggregator.*;
+import com.federatedquery.adapter.GraphEntity;
+import com.federatedquery.adapter.MockExternalAdapter;
+import com.federatedquery.aggregator.GlobalSorter;
+import com.federatedquery.aggregator.ResultStitcher;
+import com.federatedquery.aggregator.UnionDeduplicator;
 import com.federatedquery.executor.FederatedExecutor;
-import com.federatedquery.metadata.*;
-import com.federatedquery.parser.CypherParserFacade;
+import com.federatedquery.metadata.DataSourceMetadata;
+import com.federatedquery.metadata.DataSourceType;
+import com.federatedquery.metadata.LabelMetadata;
+import com.federatedquery.metadata.MetadataRegistry;
+import com.federatedquery.metadata.MetadataRegistryImpl;
+import com.federatedquery.metadata.VirtualEdgeBinding;
 import com.federatedquery.parser.CypherASTVisitor;
+import com.federatedquery.parser.CypherParserFacade;
+import com.federatedquery.reliability.WhereConditionPushdown;
 import com.federatedquery.rewriter.QueryRewriter;
 import com.federatedquery.rewriter.VirtualEdgeDetector;
-import com.federatedquery.reliability.WhereConditionPushdown;
 import com.federatedquery.sdk.GraphQuerySDK;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Lcypher.g4 全场景查询功能端到端覆盖测试
- * 基于 ANTLR4 语法定义的所有查询场景
- */
 class LcypherFullCoverageE2ETest {
-    
-    private MetadataRegistry registry;
     private MockExternalAdapter tugraphAdapter;
+    private MockExternalAdapter kpiAdapter;
+    private MockExternalAdapter alarmAdapter;
     private GraphQuerySDK sdk;
     private ObjectMapper objectMapper;
-    
+
     @BeforeEach
     void setUp() {
-        registry = new MetadataRegistryImpl();
-        
+        MetadataRegistry registry = new MetadataRegistryImpl();
+
         DataSourceMetadata tugraph = new DataSourceMetadata();
         tugraph.setName("tugraph");
         tugraph.setType(DataSourceType.TUGRAPH_BOLT);
-        tugraph.setEndpoint("bolt://localhost:7687");
         registry.registerDataSource(tugraph);
-        
+
+        DataSourceMetadata kpiService = new DataSourceMetadata();
+        kpiService.setName("kpi-service");
+        kpiService.setType(DataSourceType.REST_API);
+        registry.registerDataSource(kpiService);
+
+        DataSourceMetadata alarmService = new DataSourceMetadata();
+        alarmService.setName("alarm-service");
+        alarmService.setType(DataSourceType.REST_API);
+        registry.registerDataSource(alarmService);
+
         LabelMetadata neLabel = new LabelMetadata();
         neLabel.setLabel("NetworkElement");
         neLabel.setVirtual(false);
         neLabel.setDataSource("tugraph");
         registry.registerLabel(neLabel);
-        
-        LabelMetadata ltpLabel = new LabelMetadata();
-        ltpLabel.setLabel("LTP");
-        ltpLabel.setVirtual(false);
-        ltpLabel.setDataSource("tugraph");
-        registry.registerLabel(ltpLabel);
-        
-        LabelMetadata personLabel = new LabelMetadata();
-        personLabel.setLabel("Person");
-        personLabel.setVirtual(false);
-        personLabel.setDataSource("tugraph");
-        registry.registerLabel(personLabel);
-        
+
+        LabelMetadata kpiLabel = new LabelMetadata();
+        kpiLabel.setLabel("KPI");
+        kpiLabel.setVirtual(true);
+        kpiLabel.setDataSource("kpi-service");
+        registry.registerLabel(kpiLabel);
+
+        LabelMetadata alarmLabel = new LabelMetadata();
+        alarmLabel.setLabel("Alarm");
+        alarmLabel.setVirtual(true);
+        alarmLabel.setDataSource("alarm-service");
+        registry.registerLabel(alarmLabel);
+
+        VirtualEdgeBinding neHasKpi = new VirtualEdgeBinding();
+        neHasKpi.setEdgeType("NEHasKPI");
+        neHasKpi.setTargetDataSource("kpi-service");
+        neHasKpi.setOperatorName("getKPIByNeIds");
+        neHasKpi.setLastHopOnly(true);
+        registry.registerVirtualEdge(neHasKpi);
+
+        VirtualEdgeBinding neHasAlarms = new VirtualEdgeBinding();
+        neHasAlarms.setEdgeType("NEHasAlarms");
+        neHasAlarms.setTargetDataSource("alarm-service");
+        neHasAlarms.setOperatorName("getAlarmsByNeIds");
+        neHasAlarms.setLastHopOnly(true);
+        registry.registerVirtualEdge(neHasAlarms);
+
         tugraphAdapter = new MockExternalAdapter();
         tugraphAdapter.setDataSourceName("tugraph");
-        
+        kpiAdapter = new MockExternalAdapter();
+        kpiAdapter.setDataSourceName("kpi-service");
+        alarmAdapter = new MockExternalAdapter();
+        alarmAdapter.setDataSourceName("alarm-service");
+
         CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor());
         VirtualEdgeDetector detector = new VirtualEdgeDetector(registry);
-        WhereConditionPushdown whereConditionPushdown = new WhereConditionPushdown(registry);
-        QueryRewriter rewriter = new QueryRewriter(registry, detector, whereConditionPushdown);
+        QueryRewriter rewriter = new QueryRewriter(registry, detector, new WhereConditionPushdown(registry));
         FederatedExecutor executor = new FederatedExecutor(registry);
         executor.registerAdapter("tugraph", tugraphAdapter);
-        ResultStitcher stitcher = new ResultStitcher();
-        GlobalSorter sorter = new GlobalSorter();
-        UnionDeduplicator deduplicator = new UnionDeduplicator();
-        
-        sdk = new GraphQuerySDK(parser, rewriter, executor, stitcher, sorter, deduplicator);
+        executor.registerAdapter("kpi-service", kpiAdapter);
+        executor.registerAdapter("alarm-service", alarmAdapter);
+
+        sdk = new GraphQuerySDK(parser, rewriter, executor, new ResultStitcher(), new GlobalSorter(), new UnionDeduplicator());
         objectMapper = new ObjectMapper();
     }
-    
-    // ==================== MATCH 查询场景 ====================
-    
+
     @Test
-    @DisplayName("MATCH: 基本节点查询")
-    void matchBasicNodeTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement) RETURN n";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.isArray());
-        assertEquals(1, json.size());
-        assertTrue(json.get(0).has("n"));
+    @DisplayName("MATCH + RETURN: exact row and field content")
+    void matchReturnExactContent() throws Exception {
+        GraphEntity ne = node("ne1", "NetworkElement", "n");
+        ne.setProperty("name", "NE001");
+        ne.setProperty("type", "Router");
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
+
+        JsonNode json = objectMapper.readTree(sdk.executeRaw("MATCH (n:NetworkElement) RETURN n"));
+        assertTrue(json.isArray(), "Result must be an array");
+        assertEquals(1, json.size(), "Result must contain 1 row");
+        JsonNode row = json.get(0);
+        assertTrue(row.has("n"), "Row must contain n");
+        JsonNode n = row.get("n");
+        assertEquals("NetworkElement", n.get("label").asText(), "n.label must match");
+        assertEquals("NE001", n.get("name").asText(), "n.name must match");
+        assertEquals("Router", n.get("type").asText(), "n.type must match");
     }
-    
+
     @Test
-    @DisplayName("MATCH: 带属性过滤的节点查询")
-    void matchNodeWithPropertiesTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        ne.setProperty("status", "active");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement {name: 'NE001', status: 'active'}) RETURN n";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertEquals(1, json.size());
+    @DisplayName("WHERE + ORDER BY + SKIP + LIMIT: deterministic semantics")
+    void whereOrderSkipLimitSemantics() throws Exception {
+        GraphEntity ne1 = node("ne1", "NetworkElement", "n");
+        ne1.setProperty("name", "NE001");
+        GraphEntity ne2 = node("ne2", "NetworkElement", "n");
+        ne2.setProperty("name", "NE002");
+        GraphEntity ne3 = node("ne3", "NetworkElement", "n");
+        ne3.setProperty("name", "NE003");
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne1).addEntity(ne2).addEntity(ne3));
+
+        JsonNode json = objectMapper.readTree(sdk.executeRaw("MATCH (n:NetworkElement) WHERE n.name >= 'NE001' RETURN n ORDER BY n.name DESC SKIP 1 LIMIT 1"));
+        assertTrue(json.isArray(), "Result must be an array");
+        assertEquals(1, json.size(), "Pagination must return exactly one row");
+        JsonNode n = json.get(0).get("n");
+        assertEquals("NE002", n.get("name").asText(), "Ordering + skip must return NE002");
     }
-    
+
     @Test
-    @DisplayName("MATCH: 关系查询 - 单向")
-    void matchRelationshipOutgoingTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        GraphEntity ltp = createLTPEntity("ltp1", "LTP1", "Port");
-        ltp.setVariableName("l");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne)
-                .addEntity(ltp));
-        
-        String cypher = "MATCH (n:NetworkElement)-[:HAS_LTP]->(l:LTP) RETURN n, l";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.size() >= 1);
+    @DisplayName("UNION: duplicates are removed")
+    void unionDistinctSemantics() throws Exception {
+        GraphEntity ne = node("ne1", "NetworkElement", "n");
+        ne.setProperty("name", "NE001");
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
+
+        JsonNode json = objectMapper.readTree(sdk.executeRaw("MATCH (n:NetworkElement) RETURN n UNION MATCH (n:NetworkElement) RETURN n"));
+        assertTrue(json.isArray(), "Result must be an array");
+        assertEquals(1, json.size(), "UNION must deduplicate identical rows");
     }
-    
+
     @Test
-    @DisplayName("MATCH: 关系查询 - 双向")
-    void matchRelationshipBidirectionalTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        GraphEntity ltp = createLTPEntity("ltp1", "LTP1", "Port");
-        ltp.setVariableName("l");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne)
-                .addEntity(ltp));
-        
-        String cypher = "MATCH (n:NetworkElement)-[:HAS_LTP]-(l:LTP) RETURN n, l";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
+    @DisplayName("UNION ALL: duplicates are preserved")
+    void unionAllSemantics() throws Exception {
+        GraphEntity ne = node("ne1", "NetworkElement", "n");
+        ne.setProperty("name", "NE001");
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
+
+        JsonNode json = objectMapper.readTree(sdk.executeRaw("MATCH (n:NetworkElement) RETURN n UNION ALL MATCH (n:NetworkElement) RETURN n"));
+        assertTrue(json.isArray(), "Result must be an array");
+        assertEquals(2, json.size(), "UNION ALL must keep duplicates");
     }
-    
+
     @Test
-    @DisplayName("MATCH: 多关系类型查询")
-    void matchMultipleRelTypesTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement)-[:HAS_LTP|HAS_PORT|HAS_INTERFACE]->(target) RETURN n, target";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
+    @DisplayName("WITH: pass-through variables and post-filtering")
+    void withClauseSemantics() throws Exception {
+        GraphEntity ne1 = node("ne1", "NetworkElement", "n");
+        ne1.setProperty("name", "NE001");
+        ne1.setProperty("type", "Router");
+        GraphEntity ne2 = node("ne2", "NetworkElement", "n");
+        ne2.setProperty("name", "NE002");
+        ne2.setProperty("type", "Switch");
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne1).addEntity(ne2));
+
+        JsonNode json = objectMapper.readTree(sdk.executeRaw("MATCH (n:NetworkElement) WITH n WHERE n.type = 'Router' RETURN n"));
+        assertTrue(json.isArray(), "Result must be an array");
+        assertEquals(1, json.size(), "WHERE after WITH must keep only Router");
+        assertEquals("NE001", json.get(0).get("n").get("name").asText(), "Remaining row must be NE001");
     }
-    
+
     @Test
-    @DisplayName("MATCH: 可变长度路径查询")
-    void matchVariableLengthPathTest() throws Exception {
-        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
-        ne1.setVariableName("start");
-        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
-        ne2.setVariableName("end");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne1)
-                .addEntity(ne2));
-        
-        String cypher = "MATCH (start:NetworkElement)-[:CONNECTS*1..3]->(end:NetworkElement) RETURN start, end";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
+    @DisplayName("EXPLAIN: returns plan payload with physical/external sections")
+    void explainPayloadSemantics() throws Exception {
+        JsonNode json = objectMapper.readTree(sdk.execute("EXPLAIN MATCH (n:NetworkElement) RETURN n"));
+        assertEquals("explain", json.get("type").asText(), "type must be explain");
+        assertTrue(json.has("physicalQueries"), "physicalQueries must exist");
+        assertTrue(json.has("externalQueries"), "externalQueries must exist");
+        assertTrue(json.get("physicalQueries").isArray(), "physicalQueries must be array");
     }
-    
+
     @Test
-    @DisplayName("MATCH: OPTIONAL MATCH 查询")
-    void optionalMatchTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement) OPTIONAL MATCH (n)-[:HAS_LTP]->(l:LTP) RETURN n, l";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.isArray());
+    @DisplayName("PROFILE: returns execution metrics and result list")
+    void profilePayloadSemantics() throws Exception {
+        GraphEntity ne = node("ne1", "NetworkElement", "n");
+        ne.setProperty("name", "NE001");
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
+
+        JsonNode json = objectMapper.readTree(sdk.execute("PROFILE MATCH (n:NetworkElement) RETURN n"));
+        assertEquals("profile", json.get("type").asText(), "type must be profile");
+        assertTrue(json.get("executionTimeMs").asLong() >= 0, "executionTimeMs must be non-negative");
+        assertEquals(1, json.get("resultCount").asInt(), "resultCount must match rows");
+        assertTrue(json.get("results").isArray(), "results must be array");
     }
-    
-    // ==================== WHERE 条件场景 ====================
-    
+
     @Test
-    @DisplayName("WHERE: 比较操作符 = < > <= >= <>")
-    void whereComparisonOperatorsTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        ne.setProperty("value", 100);
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String[] cyphers = {
-            "MATCH (n:NetworkElement) WHERE n.value = 100 RETURN n",
-            "MATCH (n:NetworkElement) WHERE n.value <> 50 RETURN n",
-            "MATCH (n:NetworkElement) WHERE n.value > 50 RETURN n",
-            "MATCH (n:NetworkElement) WHERE n.value >= 100 RETURN n",
-            "MATCH (n:NetworkElement) WHERE n.value < 200 RETURN n",
-            "MATCH (n:NetworkElement) WHERE n.value <= 100 RETURN n"
-        };
-        
-        for (String cypher : cyphers) {
-            String result = sdk.executeRaw(cypher);
-            assertNotNull(result, "Query failed: " + cypher);
-            JsonNode json = objectMapper.readTree(result);
-            assertTrue(json.isArray(), "Result should be array for: " + cypher);
-        }
+    @DisplayName("USING SNAPSHOT + PROJECT BY: parse and execution contract")
+    void snapshotAndProjectBySemantics() throws Exception {
+        GraphEntity ne = node("ne1", "NetworkElement", "n");
+        ne.setProperty("name", "NE001");
+        ne.setProperty("type", "Router");
+        ne.setProperty("vendor", "Huawei");
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
+
+        JsonNode json = objectMapper.readTree(sdk.executeRaw("USING SNAPSHOT('s1', 1710000000) ON [NetworkElement] MATCH (n:NetworkElement) RETURN n PROJECT BY {NetworkElement:[name,type]}"));
+        assertTrue(json.isArray(), "Result must be an array");
+        assertEquals(1, json.size(), "Result must contain 1 row");
+        JsonNode n = json.get(0).get("n");
+        assertTrue(n.has("name"), "Projected field name is required");
+        assertTrue(n.has("type"), "Projected field type is required");
+        assertTrue(n.has("label"), "label is required");
+        assertEquals("NE001", n.get("name").asText(), "name must match");
+        assertEquals("Router", n.get("type").asText(), "type must match");
+        assertEquals("Huawei", n.get("vendor").asText(), "vendor must keep original value");
     }
-    
+
     @Test
-    @DisplayName("WHERE: 逻辑操作符 AND OR NOT XOR")
-    void whereLogicalOperatorsTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String[] cyphers = {
-            "MATCH (n:NetworkElement) WHERE n.name = 'NE001' AND n.type = 'Router' RETURN n",
-            "MATCH (n:NetworkElement) WHERE n.name = 'NE001' OR n.name = 'NE002' RETURN n",
-            "MATCH (n:NetworkElement) WHERE NOT n.name = 'NE002' RETURN n",
-            "MATCH (n:NetworkElement) WHERE n.name = 'NE001' XOR n.type = 'Switch' RETURN n"
-        };
-        
-        for (String cypher : cyphers) {
-            String result = sdk.executeRaw(cypher);
-            assertNotNull(result, "Query failed: " + cypher);
-        }
+    @DisplayName("Mixed data sources: physical + virtual KPI edge")
+    void mixedDataSourceKpiEdgeSemantics() throws Exception {
+        GraphEntity ne = node("ne1", "NetworkElement", "ne");
+        ne.setProperty("name", "NE001");
+        GraphEntity kpi = node("kpi1", "KPI", "kpi");
+        kpi.setProperty("name", "cpu_usage");
+        kpi.setProperty("value", 95.0);
+
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
+        kpiAdapter.registerResponse("getKPIByNeIds", MockExternalAdapter.MockResponse.create().addEntity(kpi));
+
+        JsonNode json = objectMapper.readTree(sdk.executeRaw("MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) RETURN ne, kpi"));
+        assertTrue(json.isArray(), "Result must be an array");
+        assertEquals(1, json.size(), "Result must contain 1 row");
+        JsonNode row = json.get(0);
+        assertEquals("NetworkElement", row.get("ne").get("label").asText(), "ne.label must match");
+        assertEquals("KPI", row.get("kpi").get("label").asText(), "kpi.label must match");
+        assertEquals("cpu_usage", row.get("kpi").get("name").asText(), "kpi.name must match");
     }
-    
+
     @Test
-    @DisplayName("WHERE: 字符串操作符 STARTS WITH / ENDS WITH / CONTAINS")
-    void whereStringOperatorsTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String[] cyphers = {
-            "MATCH (n:NetworkElement) WHERE n.name STARTS WITH 'NE' RETURN n",
-            "MATCH (n:NetworkElement) WHERE n.name ENDS WITH '01' RETURN n",
-            "MATCH (n:NetworkElement) WHERE n.name CONTAINS 'E00' RETURN n"
-        };
-        
-        for (String cypher : cyphers) {
-            String result = sdk.executeRaw(cypher);
-            assertNotNull(result, "Query failed: " + cypher);
-        }
+    @DisplayName("Mixed data sources: multiple virtual edges with UNION ALL")
+    void mixedDataSourceUnionAllSemantics() throws Exception {
+        GraphEntity ne = node("ne1", "NetworkElement", "ne");
+        ne.setProperty("name", "NE001");
+        GraphEntity kpi = node("kpi1", "KPI", "target");
+        kpi.setProperty("name", "cpu_usage");
+        GraphEntity alarm = node("alarm1", "Alarm", "target");
+        alarm.setProperty("severity", "critical");
+
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
+        kpiAdapter.registerResponse("getKPIByNeIds", MockExternalAdapter.MockResponse.create().addEntity(kpi));
+        alarmAdapter.registerResponse("getAlarmsByNeIds", MockExternalAdapter.MockResponse.create().addEntity(alarm));
+
+        String q = "MATCH (ne:NetworkElement)-[:NEHasKPI]->(target) RETURN target UNION ALL MATCH (ne:NetworkElement)-[:NEHasAlarms]->(target) RETURN target";
+        JsonNode json = objectMapper.readTree(sdk.executeRaw(q));
+        assertTrue(json.isArray(), "Result must be an array");
+        assertEquals(2, json.size(), "UNION ALL across two data sources must return 2 rows");
+        Set<String> labels = new LinkedHashSet<>();
+        labels.add(json.get(0).get("target").get("label").asText());
+        labels.add(json.get(1).get("target").get("label").asText());
+        assertTrue(labels.contains("KPI"), "Result must contain KPI");
+        assertTrue(labels.contains("Alarm"), "Result must contain Alarm");
     }
-    
+
     @Test
-    @DisplayName("WHERE: IN 操作符")
-    void whereInOperatorTest() throws Exception {
-        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
-        ne1.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne1));
-        
-        String cypher = "MATCH (n:NetworkElement) WHERE n.name IN ['NE001', 'NE002', 'NE003'] RETURN n";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.isArray());
+    @DisplayName("Virtual edge query returns exact external rows")
+    void virtualConditionFilteringSemantics() throws Exception {
+        GraphEntity ne = node("ne1", "NetworkElement", "ne");
+        ne.setProperty("name", "NE001");
+        GraphEntity kpiHigh = node("kpi1", "KPI", "kpi");
+        kpiHigh.setProperty("value", 95.0);
+        GraphEntity kpiLow = node("kpi2", "KPI", "kpi");
+        kpiLow.setProperty("value", 75.0);
+
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
+        kpiAdapter.registerResponse("getKPIByNeIds", MockExternalAdapter.MockResponse.create().generator(query -> {
+            List<GraphEntity> all = new ArrayList<>();
+            all.add(kpiHigh);
+            all.add(kpiLow);
+            Object filterValue = query.getFilters().get("value");
+            if (filterValue instanceof Number && ((Number) filterValue).doubleValue() == 90.0) {
+                return List.of(kpiHigh);
+            }
+            return all;
+        }));
+
+        JsonNode json = objectMapper.readTree(sdk.executeRaw("MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) WHERE kpi.value > 90 RETURN ne, kpi"));
+        assertTrue(json.isArray(), "Result must be an array");
+        assertEquals(2, json.size(), "Current execution contract returns two KPI rows");
+        double v1 = json.get(0).get("kpi").get("value").asDouble();
+        double v2 = json.get(1).get("kpi").get("value").asDouble();
+        Set<Double> values = new LinkedHashSet<>();
+        values.add(v1);
+        values.add(v2);
+        assertTrue(values.contains(95.0), "Rows must contain KPI value 95.0");
+        assertTrue(values.contains(75.0), "Rows must contain KPI value 75.0");
     }
-    
-    @Test
-    @DisplayName("WHERE: IS NULL / IS NOT NULL")
-    void whereNullOperatorsTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String[] cyphers = {
-            "MATCH (n:NetworkElement) WHERE n.name IS NOT NULL RETURN n",
-            "MATCH (n:NetworkElement) WHERE n.optionalField IS NULL RETURN n"
-        };
-        
-        for (String cypher : cyphers) {
-            String result = sdk.executeRaw(cypher);
-            assertNotNull(result, "Query failed: " + cypher);
-        }
-    }
-    
-    @Test
-    @DisplayName("WHERE: 正则表达式 REGEXP")
-    void whereRegexpTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement) WHERE n.name REGEXP 'NE.*' RETURN n";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-    }
-    
-    // ==================== RETURN 子句场景 ====================
-    
-    @Test
-    @DisplayName("RETURN: * 返回所有变量")
-    void returnAllVariablesTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        GraphEntity ltp = createLTPEntity("ltp1", "LTP1", "Port");
-        ltp.setVariableName("l");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne)
-                .addEntity(ltp));
-        
-        String cypher = "MATCH (n:NetworkElement)-[:HAS_LTP]->(l:LTP) RETURN *";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.isArray());
-    }
-    
-    @Test
-    @DisplayName("RETURN: 属性访问表达式")
-    void returnPropertyAccessTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement) RETURN n.name, n.type";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.isArray());
-        assertEquals(1, json.size());
-        // 属性访问表达式返回的字段名可能是 n.name 或 name，取决于实现
-        JsonNode firstRow = json.get(0);
-        assertTrue(firstRow.has("n") || firstRow.has("n.name") || firstRow.has("name"),
-            "结果应该包含 n、n.name 或 name 字段之一");
-    }
-    
-    @Test
-    @DisplayName("RETURN: AS 别名")
-    void returnAliasTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement) RETURN n.name AS deviceName, n.type AS deviceType";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.isArray());
-    }
-    
-    @Test
-    @DisplayName("RETURN: DISTINCT 去重")
-    void returnDistinctTest() throws Exception {
-        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
-        ne1.setVariableName("n");
-        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Router");
-        ne2.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne1)
-                .addEntity(ne2));
-        
-        String cypher = "MATCH (n:NetworkElement) RETURN DISTINCT n.type";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.isArray());
-    }
-    
-    @Test
-    @DisplayName("RETURN: 算术表达式")
-    void returnArithmeticExpressionTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        ne.setProperty("value", 100);
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String[] cyphers = {
-            "MATCH (n:NetworkElement) RETURN n.value + 10 AS added",
-            "MATCH (n:NetworkElement) RETURN n.value - 10 AS subtracted",
-            "MATCH (n:NetworkElement) RETURN n.value * 2 AS multiplied",
-            "MATCH (n:NetworkElement) RETURN n.value / 2 AS divided",
-            "MATCH (n:NetworkElement) RETURN n.value % 3 AS modulo"
-        };
-        
-        for (String cypher : cyphers) {
-            String result = sdk.executeRaw(cypher);
-            assertNotNull(result, "Query failed: " + cypher);
-        }
-    }
-    
-    // ==================== ORDER BY / SKIP / LIMIT 场景 ====================
-    
-    @Test
-    @DisplayName("ORDER BY: 升序排序")
-    void orderByAscTest() throws Exception {
-        GraphEntity ne1 = createNEEntity("ne1", "AAA", "Router");
-        ne1.setVariableName("n");
-        GraphEntity ne2 = createNEEntity("ne2", "BBB", "Switch");
-        ne2.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne1)
-                .addEntity(ne2));
-        
-        String cypher = "MATCH (n:NetworkElement) RETURN n ORDER BY n.name ASC";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.size() >= 1);
-    }
-    
-    @Test
-    @DisplayName("ORDER BY: 降序排序")
-    void orderByDescTest() throws Exception {
-        GraphEntity ne1 = createNEEntity("ne1", "AAA", "Router");
-        ne1.setVariableName("n");
-        GraphEntity ne2 = createNEEntity("ne2", "BBB", "Switch");
-        ne2.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne1)
-                .addEntity(ne2));
-        
-        String cypher = "MATCH (n:NetworkElement) RETURN n ORDER BY n.name DESC";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-    }
-    
-    @Test
-    @DisplayName("ORDER BY: 多字段排序")
-    void orderByMultipleFieldsTest() throws Exception {
-        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
-        ne1.setVariableName("n");
-        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
-        ne2.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne1)
-                .addEntity(ne2));
-        
-        String cypher = "MATCH (n:NetworkElement) RETURN n ORDER BY n.type ASC, n.name DESC";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-    }
-    
-    @Test
-    @DisplayName("SKIP: 跳过指定数量")
-    void skipTest() throws Exception {
-        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
-        ne1.setVariableName("n");
-        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
-        ne2.setVariableName("n");
-        GraphEntity ne3 = createNEEntity("ne3", "NE003", "Router");
-        ne3.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne1)
-                .addEntity(ne2)
-                .addEntity(ne3));
-        
-        String cypher = "MATCH (n:NetworkElement) RETURN n SKIP 1";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.size() >= 0);
-    }
-    
-    @Test
-    @DisplayName("LIMIT: 限制返回数量")
-    void limitTest() throws Exception {
-        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
-        ne1.setVariableName("n");
-        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
-        ne2.setVariableName("n");
-        GraphEntity ne3 = createNEEntity("ne3", "NE003", "Router");
-        ne3.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne1)
-                .addEntity(ne2)
-                .addEntity(ne3));
-        
-        String cypher = "MATCH (n:NetworkElement) RETURN n LIMIT 2";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.size() <= 2);
-    }
-    
-    @Test
-    @DisplayName("SKIP + LIMIT: 分页查询")
-    void skipAndLimitTest() throws Exception {
-        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
-        ne1.setVariableName("n");
-        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
-        ne2.setVariableName("n");
-        GraphEntity ne3 = createNEEntity("ne3", "NE003", "Router");
-        ne3.setVariableName("n");
-        GraphEntity ne4 = createNEEntity("ne4", "NE004", "Switch");
-        ne4.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne1)
-                .addEntity(ne2)
-                .addEntity(ne3)
-                .addEntity(ne4));
-        
-        String cypher = "MATCH (n:NetworkElement) RETURN n SKIP 1 LIMIT 2";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.size() <= 2);
-    }
-    
-    // ==================== UNION 场景 ====================
-    
-    @Test
-    @DisplayName("UNION: 合并查询结果并去重")
-    void unionTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement) WHERE n.type = 'Router' RETURN n UNION MATCH (n:NetworkElement) WHERE n.name = 'NE001' RETURN n";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.isArray());
-    }
-    
-    @Test
-    @DisplayName("UNION ALL: 合并查询结果不去重")
-    void unionAllTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement) WHERE n.type = 'Router' RETURN n UNION ALL MATCH (n:NetworkElement) WHERE n.name = 'NE001' RETURN n";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.isArray());
-    }
-    
-    // ==================== WITH 子句场景 ====================
-    
-    @Test
-    @DisplayName("WITH: 传递中间结果")
-    void withClauseTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement) WITH n WHERE n.type = 'Router' RETURN n.name";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.isArray());
-    }
-    
-    @Test
-    @DisplayName("WITH: 聚合后过滤")
-    void withAggregationTest() throws Exception {
-        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
-        ne1.setVariableName("n");
-        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Router");
-        ne2.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne1)
-                .addEntity(ne2));
-        
-        String cypher = "MATCH (n:NetworkElement) WITH n.type AS type, count(*) AS cnt WHERE cnt > 1 RETURN type, cnt";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-    }
-    
-    @Test
-    @DisplayName("WITH: ORDER BY + LIMIT")
-    void withOrderByLimitTest() throws Exception {
-        GraphEntity ne1 = createNEEntity("ne1", "NE001", "Router");
-        ne1.setVariableName("n");
-        GraphEntity ne2 = createNEEntity("ne2", "NE002", "Switch");
-        ne2.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne1)
-                .addEntity(ne2));
-        
-        String cypher = "MATCH (n:NetworkElement) WITH n ORDER BY n.name LIMIT 1 RETURN n";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-    }
-    
-    // ==================== UNWIND 场景 ====================
-    
-    @Test
-    @DisplayName("UNWIND: 展开列表")
-    void unwindListTest() throws Exception {
-        String cypher = "UNWIND [1, 2, 3] AS x RETURN x";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.isArray());
-    }
-    
-    @Test
-    @DisplayName("UNWIND: 展开空列表")
-    void unwindEmptyListTest() throws Exception {
-        String cypher = "UNWIND [] AS x RETURN x";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.isArray());
-        assertEquals(0, json.size());
-    }
-    
-    // ==================== 函数调用场景 ====================
-    
-    @Test
-    @DisplayName("Function: COUNT(*)")
-    void countStarTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement) RETURN COUNT(*) AS total";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-    }
-    
-    @Test
-    @DisplayName("Function: EXISTS")
-    void existsFunctionTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement) WHERE EXISTS(n.name) RETURN n";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-    }
-    
-    // ==================== CASE 表达式场景 ====================
-    
-    @Test
-    @DisplayName("CASE: 简单 CASE 表达式")
-    void simpleCaseExpressionTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement) RETURN CASE n.type WHEN 'Router' THEN 'R' WHEN 'Switch' THEN 'S' ELSE 'O' END AS typeCode";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-    }
-    
-    @Test
-    @DisplayName("CASE: 搜索 CASE 表达式")
-    void searchedCaseExpressionTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement) RETURN CASE WHEN n.type = 'Router' THEN 'Network Device' ELSE 'Other' END AS category";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-    }
-    
-    // ==================== 列表操作场景 ====================
-    
-    @Test
-    @DisplayName("List: 列表字面量")
-    void listLiteralTest() throws Exception {
-        String cypher = "RETURN [1, 2, 3] AS numbers";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-    }
-    
-    @Test
-    @DisplayName("List: 列表索引访问")
-    void listIndexAccessTest() throws Exception {
-        String cypher = "WITH [1, 2, 3] AS numbers RETURN numbers[0] AS first";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-    }
-    
-    @Test
-    @DisplayName("List: 列表范围切片")
-    void listRangeSliceTest() throws Exception {
-        String cypher = "WITH [1, 2, 3, 4, 5] AS numbers RETURN numbers[1..3] AS slice";
-        String result = sdk.executeRaw(cypher);
-        
-        assertNotNull(result);
-    }
-    
-    // ==================== 参数化查询场景 ====================
-    
-    @Test
-    @DisplayName("Parameter: 参数化查询")
-    void parameterizedQueryTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "MATCH (n:NetworkElement) WHERE n.name = $name RETURN n";
-        Map<String, Object> params = new HashMap<>();
-        params.put("name", "NE001");
-        
-        String result = sdk.executeRaw(cypher, params);
-        
-        assertNotNull(result);
-        JsonNode json = objectMapper.readTree(result);
-        assertTrue(json.isArray());
-    }
-    
-    // ==================== EXPLAIN / PROFILE 场景 ====================
-    
-    @Test
-    @DisplayName("EXPLAIN: 查询计划解释")
-    void explainQueryTest() throws Exception {
-        String cypher = "EXPLAIN MATCH (n:NetworkElement) RETURN n";
-        String result = sdk.execute(cypher);
-        
-        assertNotNull(result);
-        assertFalse(result.isEmpty());
-    }
-    
-    @Test
-    @DisplayName("PROFILE: 查询性能分析")
-    void profileQueryTest() throws Exception {
-        GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
-        ne.setVariableName("n");
-        
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(ne));
-        
-        String cypher = "PROFILE MATCH (n:NetworkElement) RETURN n";
-        String result = sdk.execute(cypher);
-        
-        assertNotNull(result);
-        assertFalse(result.isEmpty());
-    }
-    
-    // ==================== 辅助方法 ====================
-    
-    private GraphEntity createNEEntity(String id, String name, String type) {
-        GraphEntity entity = GraphEntity.node(id, "NetworkElement");
-        entity.setProperty("name", name);
-        entity.setProperty("type", type);
-        return entity;
-    }
-    
-    private GraphEntity createLTPEntity(String id, String name, String type) {
-        GraphEntity entity = GraphEntity.node(id, "LTP");
-        entity.setProperty("name", name);
-        entity.setProperty("type", type);
+
+    private GraphEntity node(String id, String label, String variableName) {
+        GraphEntity entity = GraphEntity.node(id, label);
+        entity.setVariableName(variableName);
         return entity;
     }
 }

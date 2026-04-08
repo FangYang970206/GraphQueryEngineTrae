@@ -66,11 +66,9 @@ public class GraphQuerySDK {
             
             ExecutionResult execResult = executor.execute(plan).join();
             
-            StitchedResult stitched = stitcher.stitch(execResult, plan);
+            List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult);
             
-            List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult, execResult);
-            
-            results = applyPendingFilters(results, stitched.getPendingFilters());
+            results = applyPendingFilters(results, plan.getGlobalContext().getPendingFilters());
             
             results = applyGlobalSortAndPagination(results, plan.getGlobalContext());
             
@@ -98,7 +96,7 @@ public class GraphQuerySDK {
             ExecutionPlan plan = rewriter.rewrite(ast);
             ExecutionResult execResult = executor.execute(plan).join();
             
-            List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult, execResult);
+            List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult);
             
             results = applyPendingFilters(results, plan.getGlobalContext().getPendingFilters());
             
@@ -466,42 +464,7 @@ public class GraphQuerySDK {
         return new ArrayList<>(results.subList(skip, end));
     }
     
-    private List<Map<String, Object>> buildTuGraphFormatResults(Program ast, StitchedResult stitched, ExecutionResult execResult) {
-        List<Map<String, Object>> results = new ArrayList<>();
-        
-        List<String> returnVariables = getReturnVariables(ast);
-        
-        if (returnVariables.isEmpty()) {
-            return results;
-        }
-        
-        Map<String, GraphEntity> entityById = stitched.getEntityById();
-        
-        for (String varName : returnVariables) {
-            GraphEntity entity = entityById.get(varName);
-            if (entity != null) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put(varName, entityToTuGraphFormat(entity));
-                results.add(row);
-            }
-        }
-        
-        if (results.isEmpty() && !entityById.isEmpty()) {
-            for (GraphEntity entity : entityById.values()) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                String varName = entity.getVariableName();
-                if (varName == null || varName.isEmpty()) {
-                    varName = entity.getLabel() != null ? entity.getLabel().toLowerCase() : "entity";
-                }
-                row.put(varName, entityToTuGraphFormat(entity));
-                results.add(row);
-            }
-        }
-        
-        return results;
-    }
-    
-    private List<Map<String, Object>> buildTuGraphFormatResults(Program ast, ExecutionResult execResult, ExecutionResult dummy) {
+    private List<Map<String, Object>> buildTuGraphFormatResults(Program ast, ExecutionResult execResult) {
         List<Map<String, Object>> results = new ArrayList<>();
         
         List<ReturnInfo> returnInfos = getReturnInfos(ast);
@@ -521,6 +484,26 @@ public class GraphQuerySDK {
             }
         }
         for (QueryResult qr : execResult.getExternalResults()) {
+            for (GraphEntity entity : qr.getEntities()) {
+                String varName = entity.getVariableName();
+                if (varName != null && !varName.isEmpty()) {
+                    entitiesByVarName.computeIfAbsent(varName, k -> new ArrayList<>()).add(entity);
+                } else if (entity.getId() != null) {
+                    entitiesByVarName.computeIfAbsent(entity.getId(), k -> new ArrayList<>()).add(entity);
+                }
+            }
+        }
+        for (QueryResult qr : execResult.getBatchResults().values()) {
+            for (GraphEntity entity : qr.getEntities()) {
+                String varName = entity.getVariableName();
+                if (varName != null && !varName.isEmpty()) {
+                    entitiesByVarName.computeIfAbsent(varName, k -> new ArrayList<>()).add(entity);
+                } else if (entity.getId() != null) {
+                    entitiesByVarName.computeIfAbsent(entity.getId(), k -> new ArrayList<>()).add(entity);
+                }
+            }
+        }
+        for (QueryResult qr : execResult.getUnionResults().values()) {
             for (GraphEntity entity : qr.getEntities()) {
                 String varName = entity.getVariableName();
                 if (varName != null && !varName.isEmpty()) {
@@ -885,11 +868,9 @@ public class GraphQuerySDK {
             
             long executionTime = System.currentTimeMillis() - startTime;
             
-            StitchedResult stitched = stitcher.stitch(execResult, plan);
+            List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult);
             
-            List<Map<String, Object>> results = buildTuGraphFormatResults(ast, stitched, execResult);
-            
-            results = applyPendingFilters(results, stitched.getPendingFilters());
+            results = applyPendingFilters(results, plan.getGlobalContext().getPendingFilters());
             
             results = applyGlobalSortAndPagination(results, plan.getGlobalContext());
             
