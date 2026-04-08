@@ -53,14 +53,45 @@ SDK 仅支持**只读查询**，任何包含写操作的语句将抛出异常。
 - `WHERE` - 条件过滤
 - `ORDER BY` - 排序
 - `LIMIT` / `SKIP` - 分页
-- `UNION` - 结果合并
+- `UNION` / `UNION ALL` - 结果合并
+- `UNWIND` - 列表展开
+- `OPTIONAL MATCH` - 可选匹配
 
 **不支持的语句**：
 - `CREATE` - 创建节点/关系
 - `MERGE` - 合并节点/关系
-- `DELETE` - 删除节点/关系
+- `DELETE` / `DETACH DELETE` - 删除节点/关系
 - `SET` - 设置属性
 - `REMOVE` - 删除属性
+
+### 2.3 存储过程调用约束
+
+**`CALL ... YIELD` 存储过程调用不经过联邦层**。
+
+存储过程调用（如 `CALL algo.shortestPath(...)`、`CALL db.vertexLabels` 等）具有以下特点：
+
+1. **无外部数据源**：存储过程完全在 TuGraph 内部执行，不涉及外部数据源
+2. **直接路由**：此类查询应直接发送到原生 TuGraph 执行，不经过联邦查询引擎的解析和重写流程
+3. **使用场景**：
+   - 图算法调用（最短路径、PageRank 等）
+   - 元数据查询（标签列表、属性列表等）
+   - 系统管理操作
+
+**正确使用方式**：
+```java
+// 存储过程调用应直接使用 TuGraph 原生客户端
+TuGraphClient nativeClient = new TuGraphClient(endpoint);
+String result = nativeClient.executeCypher("CALL algo.shortestPath(start, end) YIELD path RETURN path");
+
+// 联邦查询使用 SDK
+GraphQuerySDK sdk = new GraphQuerySDK(...);
+String result = sdk.execute("MATCH (n:Person)-[:KNOWS]->(m) RETURN n, m");
+```
+
+**设计原因**：
+- 存储过程是 TuGraph 特有功能，不涉及联邦数据融合
+- 避免不必要的解析开销
+- 保持存储过程调用的原生性能
 
 ### 2.3 外部数据源关联约束
 
