@@ -2,8 +2,6 @@
 
 ## 1. 概述
 
-本文档定义了图联邦查询引擎 SDK 的技术规范、约束条件和设计原则。
-
 ### 1.1 系统定位
 
 本 SDK 定位于客户端（应用层）与底层数据源（TuGraph / 外部服务）之间的中间件层。它将 Cypher 语言视为统一的数据访问协议，通过抽象语法树（AST）解析、重写、分发，最终在内存中将异构数据融合成统一的图结构返回。
@@ -68,32 +66,12 @@ SDK 仅支持**只读查询**，任何包含写操作的语句将抛出异常。
 
 **`CALL ... YIELD` 存储过程调用不经过联邦层**。
 
-存储过程调用（如 `CALL algo.shortestPath(...)`、`CALL db.vertexLabels` 等）具有以下特点：
-
+存储过程调用具有以下特点：
 1. **无外部数据源**：存储过程完全在 TuGraph 内部执行，不涉及外部数据源
-2. **直接路由**：此类查询应直接发送到原生 TuGraph 执行，不经过联邦查询引擎的解析和重写流程
-3. **使用场景**：
-   - 图算法调用（最短路径、PageRank 等）
-   - 元数据查询（标签列表、属性列表等）
-   - 系统管理操作
+2. **直接路由**：此类查询应直接发送到原生 TuGraph 执行
+3. **使用场景**：图算法调用（最短路径、PageRank 等）、元数据查询、系统管理操作
 
-**正确使用方式**：
-```java
-// 存储过程调用应直接使用 TuGraph 原生客户端
-TuGraphClient nativeClient = new TuGraphClient(endpoint);
-String result = nativeClient.executeCypher("CALL algo.shortestPath(start, end) YIELD path RETURN path");
-
-// 联邦查询使用 SDK
-GraphQuerySDK sdk = new GraphQuerySDK(...);
-String result = sdk.execute("MATCH (n:Person)-[:KNOWS]->(m) RETURN n, m");
-```
-
-**设计原因**：
-- 存储过程是 TuGraph 特有功能，不涉及联邦数据融合
-- 避免不必要的解析开销
-- 保持存储过程调用的原生性能
-
-### 2.3 外部数据源关联约束
+### 2.4 外部数据源关联约束
 
 外部数据源通过虚拟边与内部数据源进行关联，内外节点通过属性进行映射。
 
@@ -102,13 +80,11 @@ String result = sdk.execute("MATCH (n:Person)-[:KNOWS]->(m) RETURN n, m");
 - 虚拟边定义中必须指定关联属性映射
 - 支持一对多和多对一的关联关系
 
-### 2.4 依赖感知执行约束
+### 2.5 依赖感知执行约束
 
 虚拟边的位置决定了数据流传递方向，系统根据虚拟边位置自动识别依赖关系并按正确顺序执行查询。
 
-#### 2.4.1 虚拟边在第一跳（外部→物理）
-
-**场景描述**：查询以虚拟边开始，外部数据源的查询结果需要传递给下一跳的TuGraph作为输入。
+#### 2.5.1 虚拟边在第一跳（外部→物理）
 
 **数据流方向**：`外部数据源 → TuGraph`
 
@@ -118,24 +94,18 @@ String result = sdk.execute("MATCH (n:Person)-[:KNOWS]->(m) RETURN n, m");
 3. 将ID集合作为TuGraph查询的输入条件
 4. 执行TuGraph查询
 
-**示例**：
-```cypher
--- 从KPI服务获取KPI节点，然后查询关联的LTP
-MATCH (kpi:KPI)-[:KPIBelongsToLTP]->(ltp:LTP)
-RETURN kpi, ltp
+**示例场景**：
+```
+查询: MATCH (kpi:KPI)-[:KPIBelongsToLTP]->(ltp:LTP) RETURN kpi, ltp
+
+流程:
+1. 外部查询获取KPI节点
+2. 提取KPI的ID列表
+3. TuGraph查询关联的LTP节点
+4. 拼接返回(kpi, ltp)对
 ```
 
-**执行流程**：
-```
-1. 外部查询: getKPIs() → 返回 [kpi1, kpi2, kpi3]
-2. 提取ID: [kpi1.id, kpi2.id, kpi3.id]
-3. 物理查询: MATCH (ltp:LTP) WHERE ltp.kpiId IN [kpi1.id, kpi2.id, kpi3.id]
-4. 结果拼接: 返回完整的 (kpi, ltp) 对
-```
-
-#### 2.4.2 虚拟边在最后一跳（物理→外部）
-
-**场景描述**：查询以虚拟边结束，TuGraph的查询结果需要传递给外部数据源查询作为输入。
+#### 2.5.2 虚拟边在最后一跳（物理→外部）
 
 **数据流方向**：`TuGraph → 外部数据源`
 
@@ -145,94 +115,25 @@ RETURN kpi, ltp
 3. 将ID集合作为外部数据源查询的输入条件
 4. 执行外部数据源查询
 
-**示例**：
-```cypher
--- 先查询TuGraph中的LTP，然后获取关联的KPI数据
-MATCH (ne:NetworkElement)-[:NEHasLtps]->(ltp:LTP)-[:LTPHasKPI2]->(kpi:KPI)
-RETURN ne, ltp, kpi
+**示例场景**：
+```
+查询: MATCH (ne:NetworkElement)-[:NEHasLtps]->(ltp:LTP)-[:LTPHasKPI2]->(kpi:KPI) RETURN ne, ltp, kpi
+
+流程:
+1. TuGraph查询(ne, ltp)对
+2. 提取ltp的ID列表
+3. 外部查询获取关联的KPI节点
+4. 拼接返回(ne, ltp, kpi)三元组
 ```
 
-**执行流程**：
-```
-1. 物理查询: MATCH (ne:NetworkElement)-[:NEHasLtps]->(ltp:LTP) 
-   → 返回 [(ne1, ltp1), (ne1, ltp2), ...]
-2. 提取ID: 从ltp节点提取 [ltp1.id, ltp2.id, ...]
-3. 外部查询: getKPIsByLtpIds([ltp1.id, ltp2.id, ...]) → 返回 [kpi1, kpi2, ...]
-4. 结果拼接: 返回完整的 (ne, ltp, kpi) 三元组
-```
+#### 2.5.3 混合边场景
 
-#### 2.4.3 混合边场景
+同一跳包含虚拟边和物理边的组合（使用 `|` 操作符）时：
+- 物理边由TuGraph直接处理
+- 虚拟边触发依赖感知执行
+- 合并两种边的结果统一返回
 
-**场景描述**：同一跳包含虚拟边和物理边的组合（使用 `|` 操作符）。
-
-**示例**：
-```cypher
--- LTPHasKPI2是虚拟边，LTPHasElement是物理边
-MATCH (ne:NetworkElement)-[:NEHasLtps]->(ltp:LTP)-[:LTPHasKPI2|LTPHasElement]->(target)
-RETURN ne, ltp, target
-```
-
-**处理逻辑**：
-1. 物理边 `LTPHasElement` 由TuGraph直接处理
-2. 虚拟边 `LTPHasKPI2` 触发依赖感知执行：
-   - 先完成物理查询获取ltp节点
-   - 提取ltp ID传递给外部数据源
-   - 执行外部查询获取KPI数据
-3. 合并两种边的结果，统一返回
-
-#### 2.4.4 实现机制
-
-**ExternalQuery 依赖字段**：
-```java
-public class ExternalQuery {
-    private boolean dependsOnPhysicalQuery;  // 是否依赖物理查询
-    private String sourceVariableName;       // 源变量名（用于提取ID）
-    private String inputIdField;             // 输入ID字段
-    private List<String> inputIds;           // 输入ID列表（运行时填充）
-    
-    // 判断是否需要等待物理查询结果
-    public boolean needsInputIds() {
-        return inputIdField != null && !inputIdField.isEmpty();
-    }
-    
-    // 判断是否已准备好执行
-    public boolean isReadyToExecute() {
-        return !needsInputIds() || hasInputIds();
-    }
-}
-```
-
-**FederatedExecutor 执行逻辑**：
-```java
-public CompletableFuture<ExecutionResult> execute(ExecutionPlan plan) {
-    // 1. 分类查询
-    List<ExternalQuery> independent = externalQueries.stream()
-        .filter(q -> !q.isDependsOnPhysicalQuery())
-        .collect(toList());
-    List<ExternalQuery> dependent = externalQueries.stream()
-        .filter(ExternalQuery::isDependsOnPhysicalQuery)
-        .collect(toList());
-    
-    // 2. 先执行物理查询
-    return executePhysicalQueries(physicalQueries)
-        .thenCompose(physicalResults -> {
-            // 3. 提取ID并填充到依赖查询
-            Map<String, Set<String>> idsByVar = extractIdsFromResults(physicalResults);
-            for (ExternalQuery dep : dependent) {
-                dep.setInputIds(idsByVar.get(dep.getSourceVariableName()));
-            }
-            // 4. 执行外部查询
-            return executeExternalQueries(dependent);
-        });
-}
-```
-
-**ID提取规则**：
-- 按变量名（`variableName`）分组提取ID
-- 同时按标签名（`label`）建立索引
-- 支持多变量映射（同一ID可属于多个变量）
-
-#### 2.4.5 空结果处理
+#### 2.5.4 空结果处理规则
 
 | 场景 | 物理查询结果 | 外部查询行为 | 最终结果 |
 |------|-------------|-------------|---------|
@@ -244,59 +145,49 @@ public CompletableFuture<ExecutionResult> execute(ExecutionPlan plan) {
 
 ### 3.1 物理数据源
 
-| 类型 | 说明 | 适配器 |
-|------|------|--------|
-| TuGraph | 图数据库 | 用户实现 `DataSourceAdapter` 接口 |
-
-> **注意**: SDK 仅提供 `DataSourceAdapter` 接口定义，具体的数据源适配器（如 TuGraphAdapter）由用户根据实际需求实现。单元测试中使用 `MockExternalAdapter` 模拟所有数据源行为。
+| 类型 | 说明 |
+|------|------|
+| TuGraph | 图数据库，存储核心图数据 |
 
 ### 3.2 外部数据源
 
-| 类型 | 说明 | 接口规范 |
-|------|------|----------|
-| REST API | HTTP 服务 | RESTful API |
-| gRPC | RPC 服务 | Protocol Buffers |
-| 自定义 | 用户定义 | DataSourceAdapter 接口 |
-
-> **注意**: 外部数据源适配器同样由用户实现 `DataSourceAdapter` 接口，单元测试中使用 `MockExternalAdapter` 模拟。
+| 类型 | 说明 |
+|------|------|
+| REST API | HTTP 服务 |
+| gRPC | RPC 服务 |
+| 自定义 | 用户自定义数据源 |
 
 ## 4. 元数据定义
 
 ### 4.1 数据源元数据
 
-```java
-DataSourceMetadata {
-    String name;           // 数据源名称
-    DataSourceType type;   // 数据源类型
-    String endpoint;       // 服务端点
-    Map<String, Object> config; // 额外配置
-}
-```
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| name | String | 数据源名称 |
+| type | Enum | 数据源类型 |
+| endpoint | String | 服务端点 |
+| config | Map | 额外配置 |
 
 ### 4.2 虚拟边绑定
 
-```java
-VirtualEdgeBinding {
-    String edgeType;        // 边类型名称
-    String targetDataSource; // 目标数据源
-    String operatorName;     // 操作名称
-    String inputIdField;     // 输入ID字段
-    String outputIdField;    // 输出ID字段
-    boolean firstHopOnly;    // 仅允许第一跳
-    boolean lastHopOnly;     // 仅允许最后一跳
-}
-```
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| edgeType | String | 边类型名称 |
+| targetDataSource | String | 目标数据源 |
+| operatorName | String | 操作名称 |
+| inputIdField | String | 输入ID字段 |
+| outputIdField | String | 输出ID字段 |
+| firstHopOnly | boolean | 仅允许第一跳 |
+| lastHopOnly | boolean | 仅允许最后一跳 |
 
 ### 4.3 标签元数据
 
-```java
-LabelMetadata {
-    String label;          // 标签名称
-    boolean virtual;       // 是否虚拟
-    String dataSource;     // 所属数据源
-    List<String> properties; // 属性列表
-}
-```
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| label | String | 标签名称 |
+| virtual | boolean | 是否虚拟 |
+| dataSource | String | 所属数据源 |
+| properties | List | 属性列表 |
 
 ## 5. 返回格式规范
 
@@ -338,91 +229,55 @@ LabelMetadata {
 
 ### 6.1 批量请求策略
 
-**禁止**：在循环中逐个请求外部接口
-```java
-// ❌ 错误示例
-for (String id : ids) {
-    externalApi.query(id);  // N+1 问题
-}
-```
+**禁止**：在循环中逐个请求外部接口（N+1 问题）
 
-**要求**：批量请求
-```java
-// ✅ 正确示例
-externalApi.batchQuery(ids);  // 一次请求
-```
+**要求**：批量请求，一次请求传递所有ID
 
 ### 6.2 执行计划缓存
 
-- 使用 Caffeine 缓存执行计划
+- 缓存执行计划避免重复解析
 - 缓存键：Cypher 字符串的 Hash 值
-- 缓存值：编译后的 ExecutionPlan 对象
 - 默认过期策略：LRU
 
 ### 6.3 并行执行
 
 - UNION 查询的各部分并行执行
-- 物理查询和外部查询并行执行
-- 使用线程池管理并发
+- 无依赖的查询并行执行
+- 有依赖的查询按拓扑顺序执行
 
 ## 7. 错误处理规范
 
 ### 7.1 语法错误
 
-```json
-{
-  "success": false,
-  "error": "Syntax error at line 1, position 10: mismatched input 'RETUR' expecting 'RETURN'"
-}
-```
+返回语法错误的位置和期望的token。
 
 ### 7.2 约束违规
 
-```json
-{
-  "success": false,
-  "error": "VirtualEdgeConstraintException: Virtual edge 'NEHasKPI' cannot appear in middle of path. Virtual edges are only allowed at first or last hop."
-}
-```
+返回违反的约束类型和具体原因。
 
 ### 7.3 外部服务错误
 
-```json
-{
-  "success": false,
-  "error": "External service 'kpi-service' unavailable: Connection timeout after 30000ms"
-}
-```
+返回不可用的服务名称和错误原因。
 
 ## 8. 扩展机制
 
-### 8.1 自定义数据源适配器
+### 8.1 数据源适配器接口
 
-```java
-public interface DataSourceAdapter {
-    String getDataSourceType();
-    String getDataSourceName();
-    CompletableFuture<QueryResult> execute(ExternalQuery query);
-    QueryResult executeSync(ExternalQuery query);
-    boolean isHealthy();
-}
-```
+自定义数据源需实现适配器接口，提供以下能力：
+- 获取数据源类型和名称
+- 异步执行查询
+- 同步执行查询
+- 健康检查
 
-### 8.2 自定义语法扩展
+### 8.2 语法扩展
 
-在 `Lcypher.g4` 中定义新的语法规则，然后在 `CypherASTVisitor` 中实现访问逻辑。
+在语法定义文件中添加新规则，并在AST访问器中实现对应逻辑。
 
 ## 9. 安全规范
 
 ### 9.1 参数化查询
 
-推荐使用参数化查询防止注入攻击：
-
-```java
-Map<String, Object> params = new HashMap<>();
-params.put("name", userInput);
-sdk.execute("MATCH (n:NetworkElement {name: $name}) RETURN n", params);
-```
+推荐使用参数化查询防止注入攻击，参数以 `$param` 形式传递。
 
 ### 9.2 敏感信息保护
 
@@ -456,16 +311,13 @@ sdk.execute("MATCH (n:NetworkElement {name: $name}) RETURN n", params);
 ### 11.2 端到端测试
 
 - 覆盖所有支持的查询场景
-- **所有数据源必须使用 Mock**：
-  - TuGraph（物理图数据库）通过 `MockExternalAdapter` 模拟
-  - 外部服务（REST API、gRPC 等）通过 `MockExternalAdapter` 模拟
-  - 禁止在测试中连接真实数据库或外部服务
-- `MockExternalAdapter` 位置：`src/test/java/.../adapter/MockExternalAdapter.java`
+- **所有数据源必须使用 Mock**
+- 禁止在测试中连接真实数据库或外部服务
 - 验证返回格式的正确性
-- 遵循 UT 强制精确校验规范（见 AGENTS.md）
 
 ## 12. 变更日志
 
 | 版本 | 日期 | 变更内容 |
 |------|------|----------|
 | 1.0.0 | 2024-01 | 初始版本 |
+| 1.1.0 | 2024-04 | 添加依赖感知执行约束 |
