@@ -23,6 +23,24 @@ public class ExternalQuery {
     private String snapshotName;
     private Object snapshotTime;
     
+    private boolean dependsOnPhysicalQuery = false;
+    private String sourceVariableName;
+    
+    public boolean needsInputIds() {
+        return inputIdField != null && !inputIdField.isEmpty();
+    }
+    
+    public boolean hasInputIds() {
+        return inputIds != null && !inputIds.isEmpty();
+    }
+    
+    public boolean isReadyToExecute() {
+        if (!needsInputIds()) {
+            return true;
+        }
+        return hasInputIds();
+    }
+    
     public void addInputId(String id) { this.inputIds.add(id); }
     public void addOutputVariable(String variable) { this.outputVariables.add(variable); }
     public void addFilter(String key, Object value) { this.filters.put(key, value); }

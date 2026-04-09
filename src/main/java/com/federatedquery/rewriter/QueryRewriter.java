@@ -355,7 +355,10 @@ public class QueryRewriter {
         query.setOperator(ve.getOperator());
         
         if (ve.getStartNode() != null && ve.getStartNode().getVariable() != null) {
-            query.setInputIdField(ve.getStartNode().getVariable());
+            String sourceVar = ve.getStartNode().getVariable();
+            query.setInputIdField(sourceVar);
+            query.setSourceVariableName(sourceVar);
+            query.setDependsOnPhysicalQuery(true);
         }
         
         if (ve.getVariable() != null) {
