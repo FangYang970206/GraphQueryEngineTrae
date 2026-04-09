@@ -7,6 +7,10 @@ import com.federatedquery.adapter.QueryResult;
 import com.federatedquery.aggregator.*;
 import com.federatedquery.ast.*;
 import com.federatedquery.ast.UnionClause;
+import com.federatedquery.connector.RecordConverter;
+import com.federatedquery.connector.TuGraphConfig;
+import com.federatedquery.connector.TuGraphConnector;
+import com.federatedquery.connector.TuGraphConnectorImpl;
 import com.federatedquery.executor.ExecutionResult;
 import com.federatedquery.parser.CypherParserFacade;
 import com.federatedquery.plan.ExecutionPlan;
@@ -32,6 +36,7 @@ public class GraphQuerySDK {
     private final GlobalSorter sorter;
     private final UnionDeduplicator deduplicator;
     private final ObjectMapper objectMapper;
+    private final TuGraphConnector tugraphConnector;
     
     public GraphQuerySDK(CypherParserFacade parser,
                         QueryRewriter rewriter,
@@ -46,6 +51,75 @@ public class GraphQuerySDK {
         this.sorter = sorter;
         this.deduplicator = deduplicator;
         this.objectMapper = new ObjectMapper();
+        this.tugraphConnector = null;
+    }
+    
+    public GraphQuerySDK(CypherParserFacade parser,
+                        QueryRewriter rewriter,
+                        FederatedExecutor executor,
+                        ResultStitcher stitcher,
+                        GlobalSorter sorter,
+                        UnionDeduplicator deduplicator,
+                        TuGraphConnector tugraphConnector) {
+        this.parser = parser;
+        this.rewriter = rewriter;
+        this.executor = executor;
+        this.stitcher = stitcher;
+        this.sorter = sorter;
+        this.deduplicator = deduplicator;
+        this.objectMapper = new ObjectMapper();
+        this.tugraphConnector = tugraphConnector;
+    }
+    
+    public List<Map<String, Object>> executeRecords(String cypher) {
+        try {
+            Program ast = parser.parseCached(cypher);
+            
+            if (ast.getStatement() != null && ast.getStatement().isExplain()) {
+                throw new UnsupportedOperationException("EXPLAIN not supported in executeRecords mode");
+            }
+            
+            if (ast.getStatement() != null && ast.getStatement().isProfile()) {
+                throw new UnsupportedOperationException("PROFILE not supported in executeRecords mode");
+            }
+            
+            ExecutionPlan plan = rewriter.rewrite(ast);
+            
+            ExecutionResult execResult = executor.execute(plan).join();
+            
+            List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult);
+            
+            results = applyPendingFilters(results, plan.getGlobalContext().getPendingFilters());
+            
+            results = applyGlobalSortAndPagination(results, plan.getGlobalContext());
+            
+            results = applyDeduplication(results, ast);
+            
+            return RecordConverter.convertToRecordMaps(results);
+            
+        } catch (Exception e) {
+            log.error("Failed to execute query: {}", cypher, e);
+            throw new RuntimeException("Query execution failed: " + e.getMessage(), e);
+        }
+    }
+    
+    public List<Map<String, Object>> executeRecords(String cypher, Map<String, Object> params) {
+        String resolvedCypher = resolveParameters(cypher, params);
+        return executeRecords(resolvedCypher);
+    }
+    
+    public List<org.neo4j.driver.Record> executeWithConnector(String cypher) {
+        if (tugraphConnector == null) {
+            throw new IllegalStateException("TuGraphConnector not configured");
+        }
+        return tugraphConnector.executeQuery(cypher);
+    }
+    
+    public List<org.neo4j.driver.Record> executeWithConnector(String cypher, Object... parameters) {
+        if (tugraphConnector == null) {
+            throw new IllegalStateException("TuGraphConnector not configured");
+        }
+        return tugraphConnector.executeQuery(cypher, parameters);
     }
     
     public String execute(String cypher) {

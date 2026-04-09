@@ -307,17 +307,105 @@ SDK 仅支持**只读查询**，任何包含写操作的语句将抛出异常。
 
 - 每个模块必须有对应的单元测试
 - 测试覆盖率目标：80%+
+- 单元测试使用 Mock 数据源，不连接真实数据库
 
 ### 11.2 端到端测试
 
 - 覆盖所有支持的查询场景
-- **所有数据源必须使用 Mock**
-- 禁止在测试中连接真实数据库或外部服务
+- **单元测试必须使用 Mock 数据源**
+- **集成测试支持连接真实 TuGraph 数据库**
 - 验证返回格式的正确性
 
-## 12. 变更日志
+### 11.3 TuGraph 连接器测试
+
+- 支持真实 TuGraph 数据库连接
+- 使用 Bolt 协议连接
+- 默认配置：`bolt://127.0.0.1:7687`，用户名：`admin`，密码：`73@TuGraph`
+- 测试在数据库不可用时自动跳过
+
+## 12. TuGraph 连接器规范
+
+### 12.1 连接配置
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| uri | bolt://127.0.0.1:7687 | TuGraph Bolt 协议地址 |
+| username | admin | 用户名 |
+| password | 73@TuGraph | 密码 |
+| maxConnectionPoolSize | 50 | 最大连接池大小 |
+| connectionTimeoutMs | 30000 | 连接超时时间（毫秒） |
+| maxTransactionRetryTimeMs | 30000 | 最大事务重试时间（毫秒） |
+
+### 12.2 连接器接口
+
+```java
+public interface TuGraphConnector {
+    List<Record> executeQuery(String cypher);
+    List<Record> executeQuery(String cypher, Object... parameters);
+    void close();
+    boolean isConnected();
+    TuGraphConfig getConfig();
+}
+```
+
+### 12.3 SDK 返回格式
+
+SDK 提供多种返回格式以兼容不同使用场景：
+
+#### 12.3.1 JSON 字符串格式（向后兼容）
+
+```java
+String result = sdk.execute(cypher);
+String result = sdk.executeRaw(cypher);
+```
+
+返回格式：
+```json
+[
+  {
+    "variableName": {
+      "id": "nodeId",
+      "label": "LabelName",
+      "property1": "value1"
+    }
+  }
+]
+```
+
+#### 12.3.2 Map 列表格式（Neo4j-driver 兼容）
+
+```java
+List<Map<String, Object>> records = sdk.executeRecords(cypher);
+```
+
+返回格式：
+```json
+[
+  {
+    "variableName": {
+      "_id": "nodeId",
+      "_labels": ["LabelName"],
+      "_properties": {
+        "property1": "value1"
+      }
+    }
+  }
+]
+```
+
+#### 12.3.3 Neo4j Record 格式（直接连接 TuGraph）
+
+```java
+List<Record> records = sdk.executeWithConnector(cypher);
+List<Record> records = sdk.executeWithConnector(cypher, "param", value);
+```
+
+返回 Neo4j-driver 原生 Record 对象，与直接使用 Neo4j-driver 完全一致。
+
+## 13. 变更日志
 
 | 版本 | 日期 | 变更内容 |
 |------|------|----------|
 | 1.0.0 | 2024-01 | 初始版本 |
 | 1.1.0 | 2024-04 | 添加依赖感知执行约束 |
+| 1.2.0 | 2025-04 | 添加 TuGraph 真实数据库连接支持，新增 Neo4j-driver 兼容返回格式 |

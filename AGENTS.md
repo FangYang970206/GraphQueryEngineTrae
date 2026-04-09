@@ -58,25 +58,36 @@ Cypher → CypherParserFacade (ANTLR4 + Caffeine cache) → AST (Program)
 
 ### Mock Data Sources
 
-**ALL data sources are mocked in unit tests**, including:
-- **TuGraph** (physical graph database)
-- **External services** (REST API, gRPC, custom adapters)
+**Unit tests use Mock data sources**, including:
+- **TuGraph** (physical graph database) - mocked via `MockExternalAdapter`
+- **External services** (REST API, gRPC, custom adapters) - mocked via `MockExternalAdapter`
 
 The `MockExternalAdapter` (`src/test/java/.../adapter/MockExternalAdapter.java`) simulates all data source behaviors:
 - Supports configurable responses per operator
 - Simulates delays and errors for reliability testing
 - No real database or external service connections required
 
+### Real Database Integration Tests
+
+**Integration tests support real TuGraph database connections**:
+- **TuGraphConnector** (`src/main/java/.../connector/TuGraphConnectorImpl.java`) provides Bolt protocol connection
+- **Default configuration**: `bolt://127.0.0.1:7687`, username: `admin`, password: `73@TuGraph`
+- Tests are automatically skipped if TuGraph is not available
+- Located in `src/test/java/.../connector/TuGraphConnectorTest.java` and `src/test/java/.../e2e/TuGraphRealDatabaseE2ETest.java`
+
 ### Test Setup Pattern
 
 1. Create `MetadataRegistryImpl`
 2. Register data sources + virtual edges + labels
-3. Register mock adapters on `FederatedExecutor`
-4. Wire all components into `GraphQuerySDK`
+3. Register mock adapters on `FederatedExecutor` (for unit tests)
+4. Or use `TuGraphConnector` for real database integration tests
+5. Wire all components into `GraphQuerySDK`
 
 ### Test Coverage
 
-- `E2ETest` — 5 query scenarios with full pipeline
+- `E2ETest` — 5 query scenarios with full pipeline (mocked)
+- `TuGraphRealDatabaseE2ETest` — Real database integration tests
+- `TuGraphConnectorTest` — TuGraph connector unit/integration tests
 - `ParserTest` — ANTLR4 parsing
 - `RewriterTest` — Query rewriting
 - `ExecutorTest` — Federated execution
@@ -148,6 +159,7 @@ assertTrue(executionResult.isSuccess());
 | ANTLR4 | 4.13.1 | Cypher parsing |
 | Caffeine | 3.1.8 | Plan cache |
 | Jackson | 2.17.0 | JSON serialization |
+| Neo4j Java Driver | 4.4.18 | TuGraph Bolt connection |
 | JUnit 5 | 5.10.2 | Testing |
 | Mockito | 5.11.0 | Mocking |
 | SLF4J + Logback | 2.0.12 / 1.5.4 | Logging |
@@ -166,6 +178,7 @@ src/main/java/.../aggregator/  ResultStitcher, GlobalSorter, UnionDeduplicator, 
 src/main/java/.../reliability/  WhereConditionPushdown (used by QueryRewriter)
 src/main/java/.../metadata/    MetadataRegistry, VirtualEdgeBinding, LabelMetadata
 src/main/java/.../adapter/     DataSourceAdapter interface, GraphEntity (no production TuGraph adapter — use MockExternalAdapter in tests)
+src/main/java/.../connector/   TuGraphConnector, TuGraphConnectorImpl, TuGraphConfig, RecordConverter (TuGraph Bolt connection)
 src/main/java/.../sdk/         GraphQuerySDK (public entry point)
 ```
 
