@@ -102,6 +102,144 @@ String result = sdk.execute("MATCH (n:Person)-[:KNOWS]->(m) RETURN n, m");
 - 虚拟边定义中必须指定关联属性映射
 - 支持一对多和多对一的关联关系
 
+### 2.4 依赖感知执行约束
+
+虚拟边的位置决定了数据流传递方向，系统根据虚拟边位置自动识别依赖关系并按正确顺序执行查询。
+
+#### 2.4.1 虚拟边在第一跳（外部→物理）
+
+**场景描述**：查询以虚拟边开始，外部数据源的查询结果需要传递给下一跳的TuGraph作为输入。
+
+**数据流方向**：`外部数据源 → TuGraph`
+
+**执行顺序**：
+1. 先执行外部数据源查询，获取起始节点集合
+2. 从外部数据源结果中提取节点ID
+3. 将ID集合作为TuGraph查询的输入条件
+4. 执行TuGraph查询
+
+**示例**：
+```cypher
+-- 从KPI服务获取KPI节点，然后查询关联的LTP
+MATCH (kpi:KPI)-[:KPIBelongsToLTP]->(ltp:LTP)
+RETURN kpi, ltp
+```
+
+**执行流程**：
+```
+1. 外部查询: getKPIs() → 返回 [kpi1, kpi2, kpi3]
+2. 提取ID: [kpi1.id, kpi2.id, kpi3.id]
+3. 物理查询: MATCH (ltp:LTP) WHERE ltp.kpiId IN [kpi1.id, kpi2.id, kpi3.id]
+4. 结果拼接: 返回完整的 (kpi, ltp) 对
+```
+
+#### 2.4.2 虚拟边在最后一跳（物理→外部）
+
+**场景描述**：查询以虚拟边结束，TuGraph的查询结果需要传递给外部数据源查询作为输入。
+
+**数据流方向**：`TuGraph → 外部数据源`
+
+**执行顺序**：
+1. 先执行TuGraph物理查询，获取前置节点集合
+2. 从物理查询结果中提取源节点ID
+3. 将ID集合作为外部数据源查询的输入条件
+4. 执行外部数据源查询
+
+**示例**：
+```cypher
+-- 先查询TuGraph中的LTP，然后获取关联的KPI数据
+MATCH (ne:NetworkElement)-[:NEHasLtps]->(ltp:LTP)-[:LTPHasKPI2]->(kpi:KPI)
+RETURN ne, ltp, kpi
+```
+
+**执行流程**：
+```
+1. 物理查询: MATCH (ne:NetworkElement)-[:NEHasLtps]->(ltp:LTP) 
+   → 返回 [(ne1, ltp1), (ne1, ltp2), ...]
+2. 提取ID: 从ltp节点提取 [ltp1.id, ltp2.id, ...]
+3. 外部查询: getKPIsByLtpIds([ltp1.id, ltp2.id, ...]) → 返回 [kpi1, kpi2, ...]
+4. 结果拼接: 返回完整的 (ne, ltp, kpi) 三元组
+```
+
+#### 2.4.3 混合边场景
+
+**场景描述**：同一跳包含虚拟边和物理边的组合（使用 `|` 操作符）。
+
+**示例**：
+```cypher
+-- LTPHasKPI2是虚拟边，LTPHasElement是物理边
+MATCH (ne:NetworkElement)-[:NEHasLtps]->(ltp:LTP)-[:LTPHasKPI2|LTPHasElement]->(target)
+RETURN ne, ltp, target
+```
+
+**处理逻辑**：
+1. 物理边 `LTPHasElement` 由TuGraph直接处理
+2. 虚拟边 `LTPHasKPI2` 触发依赖感知执行：
+   - 先完成物理查询获取ltp节点
+   - 提取ltp ID传递给外部数据源
+   - 执行外部查询获取KPI数据
+3. 合并两种边的结果，统一返回
+
+#### 2.4.4 实现机制
+
+**ExternalQuery 依赖字段**：
+```java
+public class ExternalQuery {
+    private boolean dependsOnPhysicalQuery;  // 是否依赖物理查询
+    private String sourceVariableName;       // 源变量名（用于提取ID）
+    private String inputIdField;             // 输入ID字段
+    private List<String> inputIds;           // 输入ID列表（运行时填充）
+    
+    // 判断是否需要等待物理查询结果
+    public boolean needsInputIds() {
+        return inputIdField != null && !inputIdField.isEmpty();
+    }
+    
+    // 判断是否已准备好执行
+    public boolean isReadyToExecute() {
+        return !needsInputIds() || hasInputIds();
+    }
+}
+```
+
+**FederatedExecutor 执行逻辑**：
+```java
+public CompletableFuture<ExecutionResult> execute(ExecutionPlan plan) {
+    // 1. 分类查询
+    List<ExternalQuery> independent = externalQueries.stream()
+        .filter(q -> !q.isDependsOnPhysicalQuery())
+        .collect(toList());
+    List<ExternalQuery> dependent = externalQueries.stream()
+        .filter(ExternalQuery::isDependsOnPhysicalQuery)
+        .collect(toList());
+    
+    // 2. 先执行物理查询
+    return executePhysicalQueries(physicalQueries)
+        .thenCompose(physicalResults -> {
+            // 3. 提取ID并填充到依赖查询
+            Map<String, Set<String>> idsByVar = extractIdsFromResults(physicalResults);
+            for (ExternalQuery dep : dependent) {
+                dep.setInputIds(idsByVar.get(dep.getSourceVariableName()));
+            }
+            // 4. 执行外部查询
+            return executeExternalQueries(dependent);
+        });
+}
+```
+
+**ID提取规则**：
+- 按变量名（`variableName`）分组提取ID
+- 同时按标签名（`label`）建立索引
+- 支持多变量映射（同一ID可属于多个变量）
+
+#### 2.4.5 空结果处理
+
+| 场景 | 物理查询结果 | 外部查询行为 | 最终结果 |
+|------|-------------|-------------|---------|
+| 物理查询返回空 | 无节点 | 不执行（无输入ID） | 空结果集 |
+| 外部查询返回空 | 有节点 | 执行但返回空 | 物理节点 + NULL外部节点 |
+| 两者都返回空 | 无节点 | 不执行 | 空结果集 |
+
 ## 3. 数据源类型
 
 ### 3.1 物理数据源
