@@ -4,11 +4,6 @@
 
 Java 17 Maven single-module SDK. Federated Cypher query engine: parses Cypher via ANTLR4, splits into physical (TuGraph) + external data-source queries, aggregates results in memory, returns JSON.
 
-- **Package**: `com.federatedquery`
-- **GroupId**: `com.federatedquery`
-- **Artifact**: `graph-query-engine`
-- **Version**: `1.0.0-SNAPSHOT`
-
 ## Commands
 
 ```bash
@@ -186,4 +181,5 @@ src/main/java/.../sdk/         GraphQuerySDK (public entry point)
 
 - `docs/SPEC.md` — Full SDK spec with constraints, return formats, extension mechanisms
 - `docs/图联邦查询引擎思路.md` — Design doc with query examples and architecture rationale
-- `docs/todo/optimization-items.md` — Known issues and planned improvements
+- `docs/cases/cypher_case.md` — base cypher case
+- `docs/cases/virtual_graph_case.md` — virtual graph case
