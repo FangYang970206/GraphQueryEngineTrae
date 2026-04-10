@@ -183,11 +183,11 @@ flowchart TD
 
 ### Case2
 
-语句：match p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) return p union MATCH p = (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps|NEHasKPI]->(target) return p; 
+语句：match p=(ne:NetworkElement {name: 'NE002'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) return p union MATCH p = (ne:NetworkElement {name: 'NE002'})-[:NEHasLtps|NEHasKPI]->(target) return p; 
 执行过程： 
-1. MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)得到Ltp； 
-2. MATCH p = (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(target) return p; 得到p 
-3. MATCH p = (ne:NetworkElement {name: 'NE001'}) 得到ne； 
+1. MATCH p=(ne:NetworkElement {name: 'NE002'})-[:NEHasLtps]->(ltp)得到Ltp； 
+2. MATCH p = (ne:NetworkElement {name: 'NE002'})-[:NEHasLtps]->(target) return p; 得到p 
+3. MATCH p = (ne:NetworkElement {name: 'NE002'}) 得到ne； 
 4. 根据Ltp的虚拟边LTPHasKPI2查询得到KPI2，得到从ne到ltp到KPI2的路径； 
 5. 根据ne的虚拟边NEHasKPI查询得到KPI，得到从ne到KPI的路径； 
 6. 将2、4、5三个步骤得到的路径进行合并，得到最终的路径集合； 
@@ -198,7 +198,7 @@ flowchart TD
     %% 第一层并行（独立 Source）
     S1["1. MATCH (ne)-[:NEHasLtps]->(ltp)<br/>得到 ltp"]
     S2["2. MATCH (ne)-[:NEHasLtps]->(target)<br/>得到路径 p"]
-    S3["3. MATCH (ne:NetworkElement {name:'NE001'})<br/>得到 ne"]
+    S3["3. MATCH (ne:NetworkElement {name:'NE002'})<br/>得到 ne"]
 
     %% 第二层（依赖执行）
     S1 --> D1["4. LTPHasKPI2<br/>查询 KPI2"]
@@ -277,16 +277,16 @@ flowchart TD
 
 ### Case4
 
-match (alarm:Alarm {name: 'alarm001'}) where alarm.resId='2131221';
+match (alarm:Alarm {name: 'ALARM001'}) where alarm.CSN='0079bb0f-0e0a-44de-b595-cab5c22324ef';
 
 执行过程：
-1. 执行接口请求，alarm接口过滤条件存在name为alarm001，resId为2131221;
+1. 执行接口请求，alarm接口过滤条件存在name为ALARM001，CSN为0079bb0f-0e0a-44de-b595-cab5c22324ef;
 
 ### Case5
 
-match (alarm:Alarm {name: 'alarm001'})-[r1:AlarmLocateInNe]->(ne) return ne where alarm.resId='2131221';
+match (alarm:Alarm {name: 'ALARM002'})-[r1:NEHasAlarms]<-(ne) return ne where alarm.CSN='afa87ad3-0834-467c-ba2e-1315fb9ba0cb';
 
 执行过程：
-1. 执行接口请求，alarm接口过滤条件存在name为alarm001，resId为2131221;
-2. 然后根据alarm的数据去关联虚拟边去查询网元，match (ne:NetworkElement) return ne where ne.resId='xxx', xxx为第一步查询到的alarm关联的网元id；
+1. 执行接口请求，alarm接口过滤条件存在name为ALARM002，CSN为afa87ad3-0834-467c-ba2e-1315fb9ba0cb;
+2. 然后根据alarm的DN数据去关联虚拟边去查询网元，match (ne:NetworkElement) return ne where ne.resId='xxx', xxx为第一步查询到的alarm的DN；
 

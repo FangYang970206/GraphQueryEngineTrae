@@ -16,6 +16,7 @@ public class GraphEntity {
     private String startNodeId;
     private String endNodeId;
     private String variableName;
+    private String sourceEdgeType;
     
     public Object getProperty(String key) {
         return properties.get(key);

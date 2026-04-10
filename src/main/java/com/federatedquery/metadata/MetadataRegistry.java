@@ -15,6 +15,7 @@ public interface MetadataRegistry {
     boolean isVirtualLabel(String label);
     String getDataSourceForEdge(String edgeType);
     String getDataSourceForLabel(String label);
+    String getTargetLabelForEdge(String edgeType);
     
     void clear();
 }

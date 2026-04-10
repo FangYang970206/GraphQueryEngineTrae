@@ -144,18 +144,35 @@ public class FederatedExecutor {
                 .thenComposeAsync(physicalVoid -> {
                     log.debug("Physical queries completed, extracting IDs for dependent queries");
                     
-                    Map<String, Set<String>> idsByVariable = extractIdsFromPhysicalResults(result);
+                    Map<String, Map<String, Set<String>>> dataByVariable = extractIdsAndPropertiesFromPhysicalResults(result);
                     
                     for (ExternalQuery depQuery : dependentQueries) {
                         String sourceVar = depQuery.getSourceVariableName();
-                        if (sourceVar != null && idsByVariable.containsKey(sourceVar)) {
-                            Set<String> ids = idsByVariable.get(sourceVar);
-                            depQuery.getInputIds().clear();
-                            depQuery.getInputIds().addAll(ids);
-                            log.debug("Populated {} IDs for external query {} from variable {}", 
-                                    ids.size(), depQuery.getId(), sourceVar);
+                        String inputIdField = depQuery.getInputIdField();
+                        
+                        if (sourceVar != null && dataByVariable.containsKey(sourceVar)) {
+                            Map<String, Set<String>> propMap = dataByVariable.get(sourceVar);
+                            
+                            Set<String> ids = null;
+                            if (inputIdField != null && propMap.containsKey(inputIdField)) {
+                                ids = propMap.get(inputIdField);
+                                log.debug("Using property '{}' for variable '{}': {} values", 
+                                        inputIdField, sourceVar, ids.size());
+                            } else if (propMap.containsKey("_id")) {
+                                ids = propMap.get("_id");
+                                log.debug("Using _id for variable '{}': {} values", sourceVar, ids.size());
+                            }
+                            
+                            if (ids != null && !ids.isEmpty()) {
+                                depQuery.getInputIds().clear();
+                                depQuery.getInputIds().addAll(ids);
+                                log.debug("Populated {} IDs for external query {} from variable {} (field: {})", 
+                                        ids.size(), depQuery.getId(), sourceVar, inputIdField != null ? inputIdField : "_id");
+                            } else {
+                                log.warn("No IDs found for source variable: {} with field: {}", sourceVar, inputIdField);
+                            }
                         } else {
-                            log.warn("No IDs found for source variable: {}", sourceVar);
+                            log.warn("No data found for source variable: {}", sourceVar);
                         }
                     }
                     
@@ -229,6 +246,60 @@ public class FederatedExecutor {
                 }, executorService);
     }
     
+    private Map<String, Map<String, Set<String>>> extractIdsAndPropertiesFromPhysicalResults(ExecutionResult result) {
+        Map<String, Map<String, Set<String>>> dataByVariable = new HashMap<>();
+        
+        for (List<QueryResult> qrList : result.getPhysicalResults().values()) {
+            for (QueryResult qr : qrList) {
+                for (GraphEntity entity : qr.getEntities()) {
+                    String varName = entity.getVariableName();
+                    if (varName == null) {
+                        varName = entity.getLabel();
+                    }
+                    if (varName != null) {
+                        Map<String, Set<String>> propMap = dataByVariable.computeIfAbsent(varName, k -> new HashMap<>());
+                        
+                        if (entity.getId() != null) {
+                            propMap.computeIfAbsent("_id", k -> new HashSet<>()).add(entity.getId());
+                        }
+                        
+                        if (entity.getProperties() != null) {
+                            for (Map.Entry<String, Object> entry : entity.getProperties().entrySet()) {
+                                if (entry.getValue() != null) {
+                                    propMap.computeIfAbsent(entry.getKey(), k -> new HashSet<>())
+                                            .add(String.valueOf(entry.getValue()));
+                                }
+                            }
+                        }
+                    }
+                    
+                    String label = entity.getLabel();
+                    if (label != null && !label.equals(varName)) {
+                        Map<String, Set<String>> propMap = dataByVariable.computeIfAbsent(label, k -> new HashMap<>());
+                        
+                        if (entity.getId() != null) {
+                            propMap.computeIfAbsent("_id", k -> new HashSet<>()).add(entity.getId());
+                        }
+                        
+                        if (entity.getProperties() != null) {
+                            for (Map.Entry<String, Object> entry : entity.getProperties().entrySet()) {
+                                if (entry.getValue() != null) {
+                                    propMap.computeIfAbsent(entry.getKey(), k -> new HashSet<>())
+                                            .add(String.valueOf(entry.getValue()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        log.debug("Extracted data by variable: {}", dataByVariable.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().keySet())));
+        
+        return dataByVariable;
+    }
+    
     private Map<String, Set<String>> extractIdsFromPhysicalResults(ExecutionResult result) {
         Map<String, Set<String>> idsByVariable = new HashMap<>();
         
@@ -300,6 +371,19 @@ public class FederatedExecutor {
     private CompletableFuture<QueryResult> executeWithRetryInternal(DataSourceAdapter adapter, ExternalQuery query, int maxRetries, int attempt) {
         return runOnExecutor(() -> adapter.execute(query))
                 .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .thenApply(result -> {
+                    if (result != null && result.getEntities() != null) {
+                        for (GraphEntity entity : result.getEntities()) {
+                            if (query.getEdgeType() != null && entity.getSourceEdgeType() == null) {
+                                entity.setSourceEdgeType(query.getEdgeType());
+                            }
+                            if (query.getTargetLabel() != null && entity.getLabel() == null) {
+                                entity.setLabel(query.getTargetLabel());
+                            }
+                        }
+                    }
+                    return result;
+                })
                 .exceptionally(e -> {
                     if (attempt < maxRetries) {
                         log.warn("External query attempt {}/{} failed for data source: {}, retrying...", 

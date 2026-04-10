@@ -78,6 +78,12 @@ public class MetadataRegistryImpl implements MetadataRegistry {
     }
     
     @Override
+    public String getTargetLabelForEdge(String edgeType) {
+        VirtualEdgeBinding binding = virtualEdgeCache.getIfPresent(edgeType);
+        return binding != null ? binding.getTargetLabel() : null;
+    }
+    
+    @Override
     public void clear() {
         dataSourceCache.invalidateAll();
         virtualEdgeCache.invalidateAll();

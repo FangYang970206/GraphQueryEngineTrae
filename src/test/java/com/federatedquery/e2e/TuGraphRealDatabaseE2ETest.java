@@ -51,14 +51,70 @@ class TuGraphRealDatabaseE2ETest {
     private static void setupTestData() {
         connector.executeQuery("MATCH (n) DETACH DELETE n");
         
+        try {
+            connector.executeQuery("CALL db.dropEdgeLabel('NEHasLtps')");
+        } catch (Exception e) {
+            System.out.println("Drop NEHasLtps edge label warning: " + e.getMessage());
+        }
+        
+        try {
+            connector.executeQuery("CALL db.dropVertexLabel('NetworkElement')");
+        } catch (Exception e) {
+            System.out.println("Drop NetworkElement label warning: " + e.getMessage());
+        }
+        
+        try {
+            connector.executeQuery("CALL db.dropVertexLabel('LTP')");
+        } catch (Exception e) {
+            System.out.println("Drop LTP label warning: " + e.getMessage());
+        }
+        
+        try {
+            connector.executeQuery(
+                "CALL db.createVertexLabel('NetworkElement', 'resId', 'resId', 'STRING', false, 'name', 'STRING', false, 'DN', 'STRING', false)"
+            );
+            System.out.println("NetworkElement label created successfully");
+        } catch (Exception e) {
+            System.out.println("NetworkElement label creation: " + e.getMessage());
+        }
+        
+        try {
+            connector.executeQuery(
+                "CALL db.createVertexLabel('LTP', 'resId', 'resId', 'STRING', false, 'name', 'STRING', false, 'parentResId', 'STRING', false)"
+            );
+            System.out.println("LTP label created successfully");
+        } catch (Exception e) {
+            System.out.println("LTP label creation: " + e.getMessage());
+        }
+        
+        try {
+            connector.executeQuery("CALL db.createEdgeLabel('NEHasLtps', '{}', 'id', 'INT64', true)");
+            System.out.println("NEHasLtps edge label created successfully");
+        } catch (Exception e) {
+            System.out.println("NEHasLtps edge label creation: " + e.getMessage());
+        }
+        
         connector.executeQuery(
-            "CREATE (ne1:NetworkElement {id: 'ne1', name: 'NE001', type: 'Router'}) " +
-            "CREATE (ne2:NetworkElement {id: 'ne2', name: 'NE002', type: 'Switch'}) " +
-            "CREATE (ltp1:LTP {id: 'ltp1', name: 'LTP1', type: 'Port'}) " +
-            "CREATE (ltp2:LTP {id: 'ltp2', name: 'LTP2', type: 'Port'}) " +
-            "CREATE (ne1)-[:NEHasLtps]->(ltp1) " +
-            "CREATE (ne1)-[:NEHasLtps]->(ltp2) " +
-            "CREATE (ne2)-[:NEHasLtps]->(ltp1)"
+            "CREATE (ne1:NetworkElement {resId: 'ne1', name: 'NE001', DN: 'dn001'})"
+        );
+        connector.executeQuery(
+            "CREATE (ne2:NetworkElement {resId: 'ne2', name: 'NE002', DN: 'dn002'})"
+        );
+        connector.executeQuery(
+            "CREATE (ltp1:LTP {resId: 'ltp1', name: 'LTP1', parentResId: 'ne1'})"
+        );
+        connector.executeQuery(
+            "CREATE (ltp2:LTP {resId: 'ltp2', name: 'LTP2', parentResId: 'ne1'})"
+        );
+        
+        connector.executeQuery(
+            "MATCH (ne1:NetworkElement {resId: 'ne1'}), (ltp1:LTP {resId: 'ltp1'}) CREATE (ne1)-[:NEHasLtps]->(ltp1)"
+        );
+        connector.executeQuery(
+            "MATCH (ne1:NetworkElement {resId: 'ne1'}), (ltp2:LTP {resId: 'ltp2'}) CREATE (ne1)-[:NEHasLtps]->(ltp2)"
+        );
+        connector.executeQuery(
+            "MATCH (ne2:NetworkElement {resId: 'ne2'}), (ltp1:LTP {resId: 'ltp1'}) CREATE (ne2)-[:NEHasLtps]->(ltp1)"
         );
     }
     

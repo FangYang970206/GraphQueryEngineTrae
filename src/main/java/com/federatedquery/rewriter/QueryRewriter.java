@@ -309,19 +309,31 @@ public class QueryRewriter {
         
         StringBuilder cypher = new StringBuilder("MATCH ");
         
+        Set<String> physicalVariables = new LinkedHashSet<>();
+        
         if (!nodes.isEmpty()) {
             VirtualEdgeDetector.PhysicalNodePart firstNode = nodes.get(0);
             cypher.append(buildNodePattern(firstNode.getVariable(), firstNode.getLabels(), firstNode.getProperties()));
+            if (firstNode.getVariable() != null) {
+                physicalVariables.add(firstNode.getVariable());
+            }
         }
         
         for (VirtualEdgeDetector.PhysicalEdgePart edge : edges) {
             cypher.append(buildRelationshipPattern(edge));
+            if (edge.getVariable() != null) {
+                physicalVariables.add(edge.getVariable());
+            }
             if (edge.getEndNode() != null) {
                 cypher.append(buildNodePatternFromAst(edge.getEndNode()));
+                if (edge.getEndNode().getVariable() != null) {
+                    physicalVariables.add(edge.getEndNode().getVariable());
+                }
             }
         }
         
-        cypher.append(" ").append(buildReturnClause(match));
+        String returnClause = physicalVariables.isEmpty() ? "RETURN *" : "RETURN " + String.join(", ", physicalVariables);
+        cypher.append(" ").append(returnClause);
         query.setCypher(cypher.toString());
         query.setQueryType(PhysicalQuery.QueryType.MATCH);
         
@@ -353,12 +365,24 @@ public class QueryRewriter {
         query.setId(UUID.randomUUID().toString());
         query.setDataSource(ve.getDataSource());
         query.setOperator(ve.getOperator());
+        query.setEdgeType(ve.getEdgeType());
+        
+        Optional<VirtualEdgeBinding> binding = registry.getVirtualEdgeBinding(ve.getEdgeType());
+        binding.ifPresent(b -> {
+            query.setOutputFields(b.getOutputFields());
+            query.setTargetLabel(b.getTargetLabel());
+        });
         
         if (ve.getStartNode() != null && ve.getStartNode().getVariable() != null) {
             String sourceVar = ve.getStartNode().getVariable();
-            query.setInputIdField(sourceVar);
             query.setSourceVariableName(sourceVar);
             query.setDependsOnPhysicalQuery(true);
+            
+            if (ve.getIdMapping() != null && !ve.getIdMapping().isEmpty()) {
+                Map.Entry<String, String> firstMapping = ve.getIdMapping().entrySet().iterator().next();
+                query.setInputIdField(firstMapping.getKey());
+                query.setOutputIdField(firstMapping.getValue());
+            }
         }
         
         if (ve.getVariable() != null) {
@@ -367,9 +391,6 @@ public class QueryRewriter {
         if (ve.getEndNode() != null && ve.getEndNode().getVariable() != null) {
             query.addOutputVariable(ve.getEndNode().getVariable());
         }
-        
-        Optional<VirtualEdgeBinding> binding = registry.getVirtualEdgeBinding(ve.getEdgeType());
-        binding.ifPresent(b -> query.setOutputFields(b.getOutputFields()));
         
         applySnapshotToQuery(query, plan);
         
@@ -384,6 +405,16 @@ public class QueryRewriter {
         
         if (vn.getVariable() != null) {
             query.addOutputVariable(vn.getVariable());
+        }
+        
+        if (vn.getProperties() != null && !vn.getProperties().isEmpty()) {
+            for (Map.Entry<String, Object> entry : vn.getProperties().entrySet()) {
+                query.addFilter(entry.getKey(), entry.getValue());
+            }
+        }
+        
+        if (vn.getLabel() != null) {
+            query.addFilter("_label", vn.getLabel());
         }
         
         applySnapshotToQuery(query, plan);
@@ -513,7 +544,42 @@ public class QueryRewriter {
     }
     
     private String buildReturnClause(MatchClause match) {
-        return "RETURN *";
+        Set<String> variables = new LinkedHashSet<>();
+        extractVariablesFromMatch(match, variables);
+        if (variables.isEmpty()) {
+            return "RETURN *";
+        }
+        return "RETURN " + String.join(", ", variables);
+    }
+    
+    private void extractVariablesFromMatch(MatchClause match, Set<String> variables) {
+        Pattern pattern = match.getPattern();
+        if (pattern == null) return;
+        
+        for (Pattern.PatternPart part : pattern.getPatternParts()) {
+            // Note: part.getVariable() is the path variable (e.g., 'p' in 'match p=(ne)-[r]->(target)')
+            // Path variables should NOT be included in physical query RETURN clauses
+            // because TuGraph doesn't support returning path variables directly
+            extractVariablesFromElement(part.getPatternElement(), variables);
+        }
+    }
+    
+    private void extractVariablesFromElement(Pattern.PatternElement element, Set<String> variables) {
+        if (element.getNodePattern() != null) {
+            String var = element.getNodePattern().getVariable();
+            if (var != null) {
+                variables.add(var);
+            }
+        }
+        
+        for (Pattern.PatternElementChain chain : element.getChains()) {
+            if (chain.getRelationshipPattern().getVariable() != null) {
+                variables.add(chain.getRelationshipPattern().getVariable());
+            }
+            if (chain.getNodePattern().getVariable() != null) {
+                variables.add(chain.getNodePattern().getVariable());
+            }
+        }
     }
     
     private String buildNodePattern(String variable, List<String> labels, Map<String, Object> properties) {

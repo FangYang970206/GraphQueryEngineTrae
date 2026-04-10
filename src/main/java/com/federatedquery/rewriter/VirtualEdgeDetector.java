@@ -84,43 +84,55 @@ public class VirtualEdgeDetector {
     private void checkRelationshipVirtual(RelationshipPattern rel, NodePattern startNode, 
                                           NodePattern endNode, boolean isFirst, boolean isLast,
                                           DetectionResult result) {
+        List<String> virtualTypes = new ArrayList<>();
+        List<String> physicalTypes = new ArrayList<>();
+        
         for (String relType : rel.getRelationshipTypes()) {
             if (registry.isVirtualEdge(relType)) {
-                VirtualEdgeBinding binding = registry.getVirtualEdgeBinding(relType).orElse(null);
-                
-                if (binding != null) {
-                    if (binding.isFirstHopOnly() && !isFirst) {
-                        result.addError("Virtual edge '" + relType + "' can only be used as first hop");
-                    }
-                    if (binding.isLastHopOnly() && !isLast) {
-                        result.addError("Virtual edge '" + relType + "' can only be used as last hop");
-                    }
-                }
-                
-                VirtualEdgePart part = new VirtualEdgePart();
-                part.setEdgeType(relType);
-                part.setVariable(rel.getVariable());
-                part.setStartNode(startNode);
-                part.setEndNode(endNode);
-                part.setDirection(rel.getDirection());
-                part.setProperties(rel.getProperties());
-                part.setFirstHop(isFirst);
-                part.setLastHop(isLast);
-                if (binding != null) {
-                    part.setDataSource(binding.getTargetDataSource());
-                    part.setOperator(binding.getOperatorName());
-                }
-                result.addVirtualEdgePart(part);
+                virtualTypes.add(relType);
             } else {
-                PhysicalEdgePart part = new PhysicalEdgePart();
-                part.setEdgeTypes(rel.getRelationshipTypes());
-                part.setVariable(rel.getVariable());
-                part.setStartNode(startNode);
-                part.setEndNode(endNode);
-                part.setDirection(rel.getDirection());
-                part.setProperties(rel.getProperties());
-                result.addPhysicalEdgePart(part);
+                physicalTypes.add(relType);
             }
+        }
+        
+        for (String relType : virtualTypes) {
+            VirtualEdgeBinding binding = registry.getVirtualEdgeBinding(relType).orElse(null);
+            
+            if (binding != null) {
+                if (binding.isFirstHopOnly() && !isFirst) {
+                    result.addError("Virtual edge '" + relType + "' can only be used as first hop");
+                }
+                if (binding.isLastHopOnly() && !isLast) {
+                    result.addError("Virtual edge '" + relType + "' can only be used as last hop");
+                }
+            }
+            
+            VirtualEdgePart part = new VirtualEdgePart();
+            part.setEdgeType(relType);
+            part.setVariable(rel.getVariable());
+            part.setStartNode(startNode);
+            part.setEndNode(endNode);
+            part.setDirection(rel.getDirection());
+            part.setProperties(rel.getProperties());
+            part.setFirstHop(isFirst);
+            part.setLastHop(isLast);
+            if (binding != null) {
+                part.setDataSource(binding.getTargetDataSource());
+                part.setOperator(binding.getOperatorName());
+                part.setIdMapping(binding.getIdMapping());
+            }
+            result.addVirtualEdgePart(part);
+        }
+        
+        if (!physicalTypes.isEmpty()) {
+            PhysicalEdgePart part = new PhysicalEdgePart();
+            part.setEdgeTypes(physicalTypes);
+            part.setVariable(rel.getVariable());
+            part.setStartNode(startNode);
+            part.setEndNode(endNode);
+            part.setDirection(rel.getDirection());
+            part.setProperties(rel.getProperties());
+            result.addPhysicalEdgePart(part);
         }
     }
     
@@ -281,6 +293,7 @@ public class VirtualEdgeDetector {
         private String operator;
         private boolean isFirstHop;
         private boolean isLastHop;
+        private java.util.Map<String, String> idMapping;
         
         public String getEdgeType() { return edgeType; }
         public void setEdgeType(String edgeType) { this.edgeType = edgeType; }
@@ -302,5 +315,7 @@ public class VirtualEdgeDetector {
         public void setFirstHop(boolean firstHop) { isFirstHop = firstHop; }
         public boolean isLastHop() { return isLastHop; }
         public void setLastHop(boolean lastHop) { isLastHop = lastHop; }
+        public java.util.Map<String, String> getIdMapping() { return idMapping; }
+        public void setIdMapping(java.util.Map<String, String> idMapping) { this.idMapping = idMapping; }
     }
 }

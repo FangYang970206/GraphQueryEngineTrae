@@ -11,6 +11,7 @@ import java.util.Map;
 public class VirtualEdgeBinding {
     private String edgeType;
     private String targetDataSource;
+    private String targetLabel;
     private String operatorName;
     private Map<String, String> idMapping = new HashMap<>();
     private List<String> outputFields = new ArrayList<>();

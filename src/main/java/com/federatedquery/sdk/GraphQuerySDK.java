@@ -689,60 +689,182 @@ public class GraphQuerySDK {
         List<List<Map<String, Object>>> allPaths = new ArrayList<>();
         
         for (PathInfo pathInfo : pathInfos) {
-            List<Map<String, Object>> pathElements = buildPathElementsList(pathInfo, entitiesByVarName);
-            if (pathElements != null && !pathElements.isEmpty()) {
-                allPaths.add(pathElements);
+            if (pathInfo.patternElement == null) {
+                continue;
+            }
+            
+            NodePattern startNode = pathInfo.patternElement.getNodePattern();
+            String startVar = startNode != null ? startNode.getVariable() : null;
+            
+            if (startVar == null) {
+                continue;
+            }
+            
+            List<GraphEntity> startEntities = entitiesByVarName.get(startVar);
+            if (startEntities == null || startEntities.isEmpty()) {
+                continue;
+            }
+            
+            for (GraphEntity startEntity : startEntities) {
+                List<Map<String, Object>> basePath = new ArrayList<>();
+                basePath.add(buildNodeElement(startEntity));
+                buildPathVariantsRecursive(pathInfo.patternElement.getChains(), 0, basePath, entitiesByVarName, allPaths);
             }
         }
         
         if (!allPaths.isEmpty()) {
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("paths", allPaths);
+            row.put(pathVarName, allPaths);
             results.add(row);
         }
         
         return results;
     }
     
-    private List<Map<String, Object>> buildPathElementsList(PathInfo pathInfo, Map<String, List<GraphEntity>> entitiesByVarName) {
-        List<Map<String, Object>> pathElements = new ArrayList<>();
+    private void buildPathVariantsRecursive(
+            List<Pattern.PatternElementChain> chains, 
+            int chainIndex,
+            List<Map<String, Object>> currentPath,
+            Map<String, List<GraphEntity>> entitiesByVarName,
+            List<List<Map<String, Object>>> allPaths) {
         
-        if (pathInfo.patternElement == null) {
-            return pathElements;
+        if (chainIndex >= chains.size()) {
+            allPaths.add(new ArrayList<>(currentPath));
+            return;
         }
         
-        NodePattern startNode = pathInfo.patternElement.getNodePattern();
-        String startVar = startNode != null ? startNode.getVariable() : null;
-        log.debug("Start node variable: {}, available entities: {}", startVar, entitiesByVarName.keySet());
+        Pattern.PatternElementChain chain = chains.get(chainIndex);
+        RelationshipPattern relPattern = chain.getRelationshipPattern();
+        NodePattern endNode = chain.getNodePattern();
+        String endVar = endNode != null ? endNode.getVariable() : null;
         
-        if (startNode != null && startNode.getVariable() != null) {
-            List<GraphEntity> startEntities = entitiesByVarName.get(startNode.getVariable());
-            if (startEntities != null && !startEntities.isEmpty()) {
-                pathElements.add(buildNodeElement(startEntities.get(0)));
+        List<GraphEntity> endEntities = new ArrayList<>();
+        if (endNode != null && endNode.getVariable() != null) {
+            List<GraphEntity> entities = entitiesByVarName.get(endNode.getVariable());
+            if (entities != null) {
+                endEntities.addAll(entities);
             }
         }
         
-        for (Pattern.PatternElementChain chain : pathInfo.patternElement.getChains()) {
-            RelationshipPattern relPattern = chain.getRelationshipPattern();
-            if (relPattern != null && relPattern.getRelationshipTypes() != null) {
-                for (String relType : relPattern.getRelationshipTypes()) {
-                    pathElements.add(buildEdgeElement(relType));
+        if (relPattern != null && relPattern.getRelationshipTypes() != null) {
+            for (String relType : relPattern.getRelationshipTypes()) {
+                List<GraphEntity> matchedEntities = filterEntitiesByEdgeType(endEntities, relType);
+                
+                List<GraphEntity> linkedEntities = filterEntitiesByLinkage(matchedEntities, currentPath, relType);
+                
+                if (linkedEntities.isEmpty()) {
+                    List<Map<String, Object>> newPath = new ArrayList<>(currentPath);
+                    newPath.add(buildEdgeElement(relType));
+                    buildPathVariantsRecursive(chains, chainIndex + 1, newPath, entitiesByVarName, allPaths);
+                } else {
+                    for (GraphEntity endEntity : linkedEntities) {
+                        List<Map<String, Object>> newPath = new ArrayList<>(currentPath);
+                        newPath.add(buildEdgeElement(relType));
+                        newPath.add(buildNodeElement(endEntity));
+                        buildPathVariantsRecursive(chains, chainIndex + 1, newPath, entitiesByVarName, allPaths);
+                    }
                 }
             }
+        } else if (!endEntities.isEmpty()) {
+            for (GraphEntity endEntity : endEntities) {
+                List<Map<String, Object>> newPath = new ArrayList<>(currentPath);
+                newPath.add(buildNodeElement(endEntity));
+                buildPathVariantsRecursive(chains, chainIndex + 1, newPath, entitiesByVarName, allPaths);
+            }
+        } else {
+            buildPathVariantsRecursive(chains, chainIndex + 1, currentPath, entitiesByVarName, allPaths);
+        }
+    }
+    
+    private List<GraphEntity> filterEntitiesByLinkage(List<GraphEntity> entities, List<Map<String, Object>> currentPath, String edgeType) {
+        if (currentPath.isEmpty()) {
+            return entities;
+        }
+        
+        Map<String, Object> lastElement = currentPath.get(currentPath.size() - 1);
+        if (!"node".equals(lastElement.get("type"))) {
+            return entities;
+        }
+        
+        String lastNodeId = (String) ((Map<String, Object>) lastElement.get("props")).get("id");
+        if (lastNodeId == null) {
+            return entities;
+        }
+        
+        List<GraphEntity> filtered = new ArrayList<>();
+        for (GraphEntity entity : entities) {
+            if (entity.getSourceEdgeType() != null && !edgeType.equals(entity.getSourceEdgeType())) {
+                continue;
+            }
             
-            NodePattern endNode = chain.getNodePattern();
-            String endVar = endNode != null ? endNode.getVariable() : null;
-            log.debug("End node variable: {}", endVar);
-            
-            if (endNode != null && endNode.getVariable() != null) {
-                List<GraphEntity> endEntities = entitiesByVarName.get(endNode.getVariable());
-                if (endEntities != null && !endEntities.isEmpty()) {
-                    pathElements.add(buildNodeElement(endEntities.get(0)));
+            if (isVirtualEdge(edgeType)) {
+                Object parentResId = entity.getProperties().get("parentResId");
+                if (parentResId != null && parentResId.toString().equals(lastNodeId)) {
+                    filtered.add(entity);
                 }
+            } else {
+                filtered.add(entity);
             }
         }
         
-        return pathElements;
+        return filtered;
+    }
+    
+    private boolean isVirtualEdge(String edgeType) {
+        return "NEHasKPI".equals(edgeType) || "NEHasAlarms".equals(edgeType) || "LTPHasKPI2".equals(edgeType);
+    }
+    
+    private List<GraphEntity> filterEntitiesByEdgeType(List<GraphEntity> entities, String edgeType) {
+        List<GraphEntity> filtered = new ArrayList<>();
+        String expectedLabel = getExpectedLabelForEdgeType(edgeType);
+        
+        for (GraphEntity entity : entities) {
+            boolean matches = false;
+            
+            if (entity.getSourceEdgeType() != null) {
+                matches = edgeType.equals(entity.getSourceEdgeType());
+            } else if (expectedLabel != null && entity.getLabel() != null) {
+                matches = expectedLabel.equals(entity.getLabel());
+            } else {
+                matches = true;
+            }
+            
+            if (matches) {
+                filtered.add(entity);
+            }
+        }
+        return filtered;
+    }
+    
+    private String getExpectedLabelForEdgeType(String edgeType) {
+        if (edgeType == null) {
+            return null;
+        }
+        switch (edgeType) {
+            case "NEHasLtps":
+                return "LTP";
+            case "NEHasKPI":
+                return "KPI";
+            case "NEHasAlarms":
+                return "ALARM";
+            case "LTPHasKPI2":
+                return "KPI2";
+            default:
+                return null;
+        }
+    }
+    
+    private List<GraphEntity> filterEntitiesByLabel(List<GraphEntity> entities, String expectedLabel) {
+        if (expectedLabel == null) {
+            return entities;
+        }
+        List<GraphEntity> filtered = new ArrayList<>();
+        for (GraphEntity entity : entities) {
+            if (expectedLabel.equals(entity.getLabel())) {
+                filtered.add(entity);
+            }
+        }
+        return filtered;
     }
     
     private Map<String, Object> buildNodeElement(GraphEntity entity) {

@@ -101,7 +101,9 @@ public class TuGraphConnectorImpl implements TuGraphConnector {
             }
             
             while (result.hasNext()) {
-                records.add(result.next());
+                org.neo4j.driver.Record record = result.next();
+                log.info("Record keys: {}, values: {}", record.keys(), record.values());
+                records.add(record);
             }
             
             log.debug("Executed Cypher: {}, returned {} records", cypher, records.size());
