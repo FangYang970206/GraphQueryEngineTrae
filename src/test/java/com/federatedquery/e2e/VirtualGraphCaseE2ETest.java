@@ -333,7 +333,6 @@ class VirtualGraphCaseE2ETest {
     @DisplayName("Case2: UNION查询路径")
     @DisabledIf("isTuGraphNotAvailable")
     void testCase2() throws Exception {
-        // 与 virtual_graph_case.md Case2 完全一致的cypher
         String cypher = "match p=(ne:NetworkElement {name: 'NE002'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) return p union MATCH p = (ne:NetworkElement {name: 'NE002'})-[:NEHasLtps|NEHasKPI]->(target) return p";
         
         String result = sdk.execute(cypher);
@@ -348,21 +347,31 @@ class VirtualGraphCaseE2ETest {
         }
         
         assertTrue(jsonNode.isArray(), "结果应该是数组");
-        
-        // 验证路径返回
-        // 根据Case2的执行过程，应该返回以下路径：
-        // 1. NE002 -> LTP003 -> KPI2003 (通过NEHasLtps -> LTPHasKPI2)
-        // 2. NE002 -> LTP004 -> KPI2004 (通过NEHasLtps -> LTPHasKPI2)
-        // 3. NE002 -> LTP003 (通过NEHasLtps)
-        // 4. NE002 -> LTP004 (通过NEHasLtps)
-        // 5. NE002 -> KPI (通过NEHasKPI)
-        assertTrue(jsonNode.size() >= 1, "应该至少有1条路径记录");
-        
-        for (JsonNode row : jsonNode) {
-            assertTrue(row.has("p"), "每行应该包含p字段（路径）");
+        assertEquals(1, jsonNode.size(), "RETURN p 的当前结果格式应该只返回1行");
+
+        JsonNode firstRow = jsonNode.get(0);
+        assertTrue(firstRow.has("p"), "结果行必须包含 p 字段");
+
+        JsonNode paths = firstRow.get("p");
+        assertTrue(paths.isArray(), "p 字段必须是路径数组");
+        assertEquals(5, paths.size(), "Case2 应该精确返回 5 条路径");
+
+        Set<String> expectedPaths = Set.of(
+            "NetworkElement:NE002->NEHasLtps->LTP:LTP003->LTPHasKPI2->KPI2:KPI2003",
+            "NetworkElement:NE002->NEHasLtps->LTP:LTP004->LTPHasKPI2->KPI2:KPI2004",
+            "NetworkElement:NE002->NEHasLtps->LTP:LTP003",
+            "NetworkElement:NE002->NEHasLtps->LTP:LTP004",
+            "NetworkElement:NE002->NEHasKPI->KPI:KPI001"
+        );
+
+        Set<String> actualPaths = new LinkedHashSet<>();
+        for (JsonNode path : paths) {
+            actualPaths.add(buildPathSignature(path));
         }
-        
-        logger.info("Case2测试通过: 共{}条路径记录", jsonNode.size());
+
+        assertEquals(expectedPaths, actualPaths, "Case2 返回的路径集合必须与预期完全一致");
+
+        logger.info("Case2测试通过: 返回{}条唯一路径", paths.size());
     }
     
     @Test
@@ -719,5 +728,33 @@ class VirtualGraphCaseE2ETest {
     
     static boolean isTuGraphNotAvailable() {
         return !tuGraphAvailable;
+    }
+
+    private String buildPathSignature(JsonNode path) {
+        assertTrue(path.isArray(), "每条路径必须是数组");
+        assertTrue(path.size() == 3 || path.size() == 5, "路径长度必须是3或5");
+
+        List<String> segments = new ArrayList<>();
+        for (int i = 0; i < path.size(); i++) {
+            JsonNode element = path.get(i);
+            assertTrue(element.has("type"), "路径元素必须包含 type 字段");
+            assertTrue(element.has("label"), "路径元素必须包含 label 字段");
+
+            String type = element.get("type").asText();
+            String label = element.get("label").asText();
+
+            if ("node".equals(type)) {
+                assertTrue(element.has("props"), "节点元素必须包含 props 字段");
+                JsonNode props = element.get("props");
+                assertTrue(props.has("name"), "节点必须包含 name 字段");
+                segments.add(label + ":" + props.get("name").asText());
+            } else if ("edge".equals(type)) {
+                segments.add(label);
+            } else {
+                fail("未知路径元素类型: " + type);
+            }
+        }
+
+        return String.join("->", segments);
     }
 }

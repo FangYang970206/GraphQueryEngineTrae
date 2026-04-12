@@ -679,6 +679,7 @@ public class GraphQuerySDK {
     
     private List<Map<String, Object>> buildPathResults(String pathVarName, Map<String, List<GraphEntity>> entitiesByVarName, Program ast) {
         List<Map<String, Object>> results = new ArrayList<>();
+        Map<String, List<GraphEntity>> normalizedEntitiesByVarName = deduplicateEntitiesByVarName(entitiesByVarName);
         
         List<PathInfo> pathInfos = extractPathInfo(ast, pathVarName);
         
@@ -700,7 +701,7 @@ public class GraphQuerySDK {
                 continue;
             }
             
-            List<GraphEntity> startEntities = entitiesByVarName.get(startVar);
+            List<GraphEntity> startEntities = normalizedEntitiesByVarName.get(startVar);
             if (startEntities == null || startEntities.isEmpty()) {
                 continue;
             }
@@ -708,17 +709,54 @@ public class GraphQuerySDK {
             for (GraphEntity startEntity : startEntities) {
                 List<Map<String, Object>> basePath = new ArrayList<>();
                 basePath.add(buildNodeElement(startEntity));
-                buildPathVariantsRecursive(pathInfo.patternElement.getChains(), 0, basePath, entitiesByVarName, allPaths);
+                buildPathVariantsRecursive(pathInfo.patternElement.getChains(), 0, basePath, normalizedEntitiesByVarName, allPaths);
             }
         }
         
         if (!allPaths.isEmpty()) {
+            List<List<Map<String, Object>>> deduplicatedPaths = new ArrayList<>(new LinkedHashSet<>(allPaths));
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put(pathVarName, allPaths);
+            row.put(pathVarName, deduplicatedPaths);
             results.add(row);
         }
         
         return results;
+    }
+
+    private Map<String, List<GraphEntity>> deduplicateEntitiesByVarName(Map<String, List<GraphEntity>> entitiesByVarName) {
+        Map<String, List<GraphEntity>> deduplicated = new LinkedHashMap<>();
+        
+        for (Map.Entry<String, List<GraphEntity>> entry : entitiesByVarName.entrySet()) {
+            Map<String, GraphEntity> uniqueEntities = new LinkedHashMap<>();
+            for (GraphEntity entity : entry.getValue()) {
+                uniqueEntities.putIfAbsent(buildGraphEntityDedupKey(entity), entity);
+            }
+            deduplicated.put(entry.getKey(), new ArrayList<>(uniqueEntities.values()));
+        }
+        
+        return deduplicated;
+    }
+
+    private String buildGraphEntityDedupKey(GraphEntity entity) {
+        StringBuilder key = new StringBuilder();
+        key.append(entity.getType()).append('|')
+                .append(entity.getVariableName()).append('|')
+                .append(entity.getLabel()).append('|')
+                .append(entity.getId()).append('|')
+                .append(entity.getSourceEdgeType()).append('|')
+                .append(entity.getStartNodeId()).append('|')
+                .append(entity.getEndNodeId()).append('|');
+        
+        Map<String, Object> properties = entity.getProperties();
+        if (properties != null && !properties.isEmpty()) {
+            List<String> propertyKeys = new ArrayList<>(properties.keySet());
+            Collections.sort(propertyKeys);
+            for (String propertyKey : propertyKeys) {
+                key.append(propertyKey).append('=').append(properties.get(propertyKey)).append(';');
+            }
+        }
+        
+        return key.toString();
     }
     
     private void buildPathVariantsRecursive(
