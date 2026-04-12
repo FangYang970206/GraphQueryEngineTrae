@@ -13,6 +13,7 @@ public class BatchRequest {
     private String operator;
     private List<String> inputIds = new ArrayList<>();
     private String inputIdField;
+    private String outputIdField;
     private List<String> outputFields = new ArrayList<>();
     private List<String> outputVariables = new ArrayList<>();
     private List<ExternalQuery> originalQueries = new ArrayList<>();

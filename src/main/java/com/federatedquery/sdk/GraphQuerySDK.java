@@ -542,7 +542,8 @@ public class GraphQuerySDK {
         List<Map<String, Object>> results = new ArrayList<>();
         
         List<ReturnInfo> returnInfos = getReturnInfos(ast);
-        Map<String, List<GraphEntity>> entitiesByVarName = collectEntitiesByVarName(execResult, true, true);
+        Map<String, List<GraphEntity>> entitiesByVarName = collectEntitiesByVarName(execResult, false, true);
+        List<QueryResult.ResultRow> rows = collectRows(execResult, false, false);
         if (returnInfos.isEmpty()) {
             for (List<GraphEntity> entities : entitiesByVarName.values()) {
                 for (GraphEntity entity : entities) {
@@ -563,7 +564,7 @@ public class GraphQuerySDK {
                 List<Map<String, Object>> pathResults = buildStructuredPathResults(info.variableName, ast, execResult);
                 if (pathResults.isEmpty()) {
                     log.debug("Building path results for variable: {}, entitiesByVarName: {}", info.variableName, entitiesByVarName.keySet());
-                    pathResults = buildPathResults(info.variableName, entitiesByVarName, ast);
+                    pathResults = buildPathResults(info.variableName, entitiesByVarName, rows, ast);
                 }
                 results.addAll(pathResults);
             }
@@ -640,6 +641,34 @@ public class GraphQuerySDK {
         return entitiesByVarName;
     }
 
+    private List<QueryResult.ResultRow> collectRows(
+            ExecutionResult execResult,
+            boolean includeBatchResults,
+            boolean includeUnionResults) {
+        List<QueryResult.ResultRow> rows = new ArrayList<>();
+        
+        for (List<QueryResult> qrList : execResult.getPhysicalResults().values()) {
+            for (QueryResult qr : qrList) {
+                rows.addAll(qr.getRows());
+            }
+        }
+        for (QueryResult qr : execResult.getExternalResults()) {
+            rows.addAll(qr.getRows());
+        }
+        if (includeBatchResults) {
+            for (QueryResult qr : execResult.getBatchResults().values()) {
+                rows.addAll(qr.getRows());
+            }
+        }
+        if (includeUnionResults) {
+            for (QueryResult qr : execResult.getUnionResults().values()) {
+                rows.addAll(qr.getRows());
+            }
+        }
+        
+        return rows;
+    }
+
     private void addEntitiesToVarMap(Map<String, List<GraphEntity>> entitiesByVarName, List<GraphEntity> entities) {
         for (GraphEntity entity : entities) {
             String varName = entity.getVariableName();
@@ -706,7 +735,8 @@ public class GraphQuerySDK {
                     continue;
                 }
                 Map<String, List<GraphEntity>> branchEntitiesByVarName = collectEntitiesByVarName(subResults.get(i), false, false);
-                allPaths.addAll(buildPaths(pathInfos, branchEntitiesByVarName));
+                List<QueryResult.ResultRow> branchRows = collectRows(subResults.get(i), false, false);
+                allPaths.addAll(buildPaths(pathInfos, branchEntitiesByVarName, branchRows));
             }
         }
         
@@ -727,13 +757,28 @@ public class GraphQuerySDK {
         return subResults;
     }
     
-    private List<Map<String, Object>> buildPathResults(String pathVarName, Map<String, List<GraphEntity>> entitiesByVarName, Program ast) {
+    private List<Map<String, Object>> buildPathResults(
+            String pathVarName,
+            Map<String, List<GraphEntity>> entitiesByVarName,
+            List<QueryResult.ResultRow> rows,
+            Program ast) {
         List<PathInfo> pathInfos = extractPathInfo(ast, pathVarName);
-        List<List<Map<String, Object>>> allPaths = buildPaths(pathInfos, entitiesByVarName);
+        List<List<Map<String, Object>>> allPaths = buildPaths(pathInfos, entitiesByVarName, rows);
         return wrapPaths(pathVarName, allPaths);
     }
 
-    private List<List<Map<String, Object>>> buildPaths(List<PathInfo> pathInfos, Map<String, List<GraphEntity>> entitiesByVarName) {
+    private List<List<Map<String, Object>>> buildPaths(
+            List<PathInfo> pathInfos,
+            Map<String, List<GraphEntity>> entitiesByVarName,
+            List<QueryResult.ResultRow> rows) {
+        List<List<Map<String, Object>>> rowBasedPaths = filterValidPaths(buildPathsFromRows(pathInfos, entitiesByVarName, rows));
+        if (!rowBasedPaths.isEmpty()) {
+            return rowBasedPaths;
+        }
+        return filterValidPaths(buildPathsFromEntities(pathInfos, entitiesByVarName));
+    }
+
+    private List<List<Map<String, Object>>> buildPathsFromEntities(List<PathInfo> pathInfos, Map<String, List<GraphEntity>> entitiesByVarName) {
         List<List<Map<String, Object>>> allPaths = new ArrayList<>();
         if (pathInfos.isEmpty()) {
             return allPaths;
@@ -764,6 +809,139 @@ public class GraphQuerySDK {
             }
         }
         return allPaths;
+    }
+
+    private List<List<Map<String, Object>>> buildPathsFromRows(
+            List<PathInfo> pathInfos,
+            Map<String, List<GraphEntity>> entitiesByVarName,
+            List<QueryResult.ResultRow> rows) {
+        List<List<Map<String, Object>>> allPaths = new ArrayList<>();
+        if (pathInfos.isEmpty() || rows == null || rows.isEmpty()) {
+            return allPaths;
+        }
+
+        Map<String, List<GraphEntity>> normalizedEntitiesByVarName = deduplicateEntitiesByVarName(entitiesByVarName);
+        for (PathInfo pathInfo : pathInfos) {
+            if (pathInfo.patternElement == null) {
+                continue;
+            }
+
+            NodePattern startNode = pathInfo.patternElement.getNodePattern();
+            String startVar = startNode != null ? startNode.getVariable() : null;
+            if (startVar == null) {
+                continue;
+            }
+
+            for (QueryResult.ResultRow row : rows) {
+                GraphEntity startEntity = row.getEntitiesByVariable().get(startVar);
+                if (startEntity == null) {
+                    continue;
+                }
+
+                List<Map<String, Object>> basePath = new ArrayList<>();
+                basePath.add(buildNodeElement(startEntity));
+                buildPathVariantsRecursiveWithRow(
+                        pathInfo.patternElement.getChains(),
+                        0,
+                        basePath,
+                        normalizedEntitiesByVarName,
+                        row,
+                        allPaths);
+            }
+        }
+
+        return allPaths;
+    }
+
+    private void buildPathVariantsRecursiveWithRow(
+            List<Pattern.PatternElementChain> chains,
+            int chainIndex,
+            List<Map<String, Object>> currentPath,
+            Map<String, List<GraphEntity>> entitiesByVarName,
+            QueryResult.ResultRow row,
+            List<List<Map<String, Object>>> allPaths) {
+
+        if (chainIndex >= chains.size()) {
+            allPaths.add(new ArrayList<>(currentPath));
+            return;
+        }
+
+        Pattern.PatternElementChain chain = chains.get(chainIndex);
+        RelationshipPattern relPattern = chain.getRelationshipPattern();
+        NodePattern endNode = chain.getNodePattern();
+        String endVar = endNode != null ? endNode.getVariable() : null;
+        GraphEntity rowEntity = endVar != null ? row.getEntitiesByVariable().get(endVar) : null;
+
+        List<GraphEntity> endEntities = new ArrayList<>();
+        if (endVar != null) {
+            List<GraphEntity> entities = entitiesByVarName.get(endVar);
+            if (entities != null) {
+                endEntities.addAll(entities);
+            }
+        }
+
+        if (relPattern != null && relPattern.getRelationshipTypes() != null) {
+            for (String relType : relPattern.getRelationshipTypes()) {
+                List<GraphEntity> linkedEntities = new ArrayList<>();
+                if (rowEntity != null) {
+                    if (matchesPathStep(rowEntity, currentPath, relType)) {
+                        linkedEntities.add(rowEntity);
+                    }
+                } else if (isVirtualEdge(relType)) {
+                    List<GraphEntity> matchedEntities = filterEntitiesByEdgeType(endEntities, relType);
+                    linkedEntities.addAll(filterEntitiesByLinkage(matchedEntities, currentPath, relType));
+                }
+
+                if (linkedEntities.isEmpty()) {
+                    continue;
+                }
+
+                for (GraphEntity endEntity : linkedEntities) {
+                    List<Map<String, Object>> newPath = new ArrayList<>(currentPath);
+                    newPath.add(buildEdgeElement(relType));
+                    newPath.add(buildNodeElement(endEntity));
+                    buildPathVariantsRecursiveWithRow(chains, chainIndex + 1, newPath, entitiesByVarName, row, allPaths);
+                }
+            }
+        } else if (rowEntity != null) {
+            List<Map<String, Object>> newPath = new ArrayList<>(currentPath);
+            newPath.add(buildNodeElement(rowEntity));
+            buildPathVariantsRecursiveWithRow(chains, chainIndex + 1, newPath, entitiesByVarName, row, allPaths);
+        }
+    }
+
+    private boolean matchesPathStep(GraphEntity entity, List<Map<String, Object>> currentPath, String relType) {
+        List<GraphEntity> matchedEntities = filterEntitiesByEdgeType(List.of(entity), relType);
+        return !filterEntitiesByLinkage(matchedEntities, currentPath, relType).isEmpty();
+    }
+
+    private List<List<Map<String, Object>>> filterValidPaths(List<List<Map<String, Object>>> paths) {
+        List<List<Map<String, Object>>> validPaths = new ArrayList<>();
+        for (List<Map<String, Object>> path : paths) {
+            if (isValidPath(path)) {
+                validPaths.add(path);
+            }
+        }
+        return validPaths;
+    }
+
+    private boolean isValidPath(List<Map<String, Object>> path) {
+        if (path == null || path.isEmpty() || path.size() % 2 == 0) {
+            return false;
+        }
+        for (int i = 0; i < path.size(); i++) {
+            Object type = path.get(i).get("type");
+            if (!(type instanceof String typeValue)) {
+                return false;
+            }
+            if (i % 2 == 0 && !"node".equals(typeValue)) {
+                return false;
+            }
+            if (i % 2 == 1 && !"edge".equals(typeValue)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private List<Map<String, Object>> wrapPaths(String pathVarName, List<List<Map<String, Object>>> allPaths) {

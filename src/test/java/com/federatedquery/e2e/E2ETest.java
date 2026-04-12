@@ -352,6 +352,66 @@ class E2ETest {
         assertEquals("node", fourthNode.get("type").asText(), "第七个元素必须是node");
         assertEquals("Card", fourthNode.get("label").asText(), "第四个节点label必须是Card");
     }
+
+    @Test
+    @DisplayName("示例3b: mixed path 优先按行归属构造路径")
+    void example3b_MixedPathUsesRowProvenance() throws Exception {
+        GraphEntity neRow1 = createNEEntity("ne1", "NE001", "Router");
+        neRow1.setVariableName("ne");
+
+        GraphEntity ltpRow1 = createLTPEntity("ltp1", "LTP001", "Port");
+        ltpRow1.setVariableName("ltp");
+        ltpRow1.setProperty("resId", "ltp1");
+
+        GraphEntity neRow2 = createNEEntity("ne1", "NE001", "Router");
+        neRow2.setVariableName("ne");
+
+        GraphEntity ltpRow2 = createLTPEntity("ltp2", "LTP002", "Port");
+        ltpRow2.setVariableName("ltp");
+        ltpRow2.setProperty("resId", "ltp2");
+
+        GraphEntity kpiRow1 = createKPIEntity("kpi1", "KPI001", 10.0);
+        kpiRow1.setVariableName("target");
+        kpiRow1.setProperty("parentResId", "ltp1");
+
+        GraphEntity kpiRow2 = createKPIEntity("kpi2", "KPI002", 20.0);
+        kpiRow2.setVariableName("target");
+        kpiRow2.setProperty("parentResId", "ltp2");
+
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addRowEntities(neRow1, ltpRow1)
+                .addRowEntities(neRow2, ltpRow2));
+
+        kpiAdapter.registerResponse("getKPI2ByLtpIds", MockExternalAdapter.MockResponse.create()
+                .addRowEntities(kpiRow1)
+                .addRowEntities(kpiRow2));
+
+        String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN p";
+
+        String result = sdk.executeRaw(cypher);
+
+        JsonNode json = objectMapper.readTree(result);
+        assertTrue(json.isArray(), "结果必须是数组");
+        assertEquals(1, json.size(), "结果数组应该有1条记录");
+
+        JsonNode firstRow = json.get(0);
+        assertTrue(firstRow.has("p"), "每行必须有p字段");
+        JsonNode paths = firstRow.get("p");
+        assertTrue(paths.isArray(), "p必须是数组");
+        assertEquals(2, paths.size(), "应该精确返回2条路径");
+
+        Set<String> expectedPaths = Set.of(
+                "NetworkElement:NE001->NEHasLtps->LTP:LTP001->LTPHasKPI2->KPI:KPI001",
+                "NetworkElement:NE001->NEHasLtps->LTP:LTP002->LTPHasKPI2->KPI:KPI002"
+        );
+
+        Set<String> actualPaths = new LinkedHashSet<>();
+        for (JsonNode path : paths) {
+            actualPaths.add(buildPathSignature(path));
+        }
+
+        assertEquals(expectedPaths, actualPaths, "路径必须按行归属精确构造，不能产生交叉拼接");
+    }
     
     @Test
     @DisplayName("示例4: 纯外部数据源查询 - 返回TuGraph格式")
@@ -643,6 +703,31 @@ class E2ETest {
         entity.setProperty("severity", severity);
         entity.setProperty("message", message);
         return entity;
+    }
+
+    private String buildPathSignature(JsonNode path) {
+        assertTrue(path.isArray(), "路径必须是数组");
+
+        List<String> segments = new ArrayList<>();
+        for (JsonNode element : path) {
+            assertTrue(element.has("type"), "路径元素必须包含 type 字段");
+            assertTrue(element.has("label"), "路径元素必须包含 label 字段");
+
+            String type = element.get("type").asText();
+            String label = element.get("label").asText();
+
+            if ("node".equals(type)) {
+                JsonNode props = element.get("props");
+                assertTrue(props.has("name"), "节点必须包含 name 字段");
+                segments.add(label + ":" + props.get("name").asText());
+            } else if ("edge".equals(type)) {
+                segments.add(label);
+            } else {
+                fail("未知路径元素类型: " + type);
+            }
+        }
+
+        return String.join("->", segments);
     }
     
     @Test

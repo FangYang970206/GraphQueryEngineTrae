@@ -177,3 +177,129 @@ flowchart TD
 - `src/main/java/com/federatedquery/executor/BatchingStrategy.java`
 - `src/main/java/com/federatedquery/sdk/GraphQuerySDK.java`
 - `src/test/java/com/federatedquery/e2e/VirtualGraphCaseE2ETest.java`
+
+---
+
+## 十、record-based path reconstruction 演进说明
+
+### 10.1 初始状态：全局变量池重建路径
+
+最初的 `RETURN p` 路径构造方式是：
+
+1. 把 `physicalResults / externalResults / batchResults / unionResults` 全部汇总
+2. 按变量名生成全局 `entitiesByVarName`
+3. 根据 AST pattern 从起点开始递归枚举路径
+
+这种方式的优点是实现简单，但缺点也很明显：
+
+- 容易把不同来源、不同分支的实体混在一起
+- 对 `UNION` 场景容易产生跨分支误拼接
+- 对 batch 外部结果只能做弱归属，容易出现重复或错误挂接
+
+```mermaid
+flowchart LR
+    A[physical/external/batch/union] --> B[全局 entitiesByVarName]
+    B --> C[按 AST pattern 递归枚举]
+    C --> D[路径结果]
+```
+
+### 10.2 第一阶段：保留路径层最终去重
+
+第一步并没有改变路径模型，而是在路径构造完成后增加两道兜底：
+
+- 先对参与拼装的实体做规范化去重
+- 再对最终完整 path 做路径级去重
+
+这一步主要解决的是**结果爆炸**，例如 `testCase2` 中“语义上只有 5 条路径，但实现层输出很多条”。
+
+### 10.3 第二阶段：按 UNION 分支重建路径
+
+第二步开始引入 provenance：
+
+- `executeUnion` 保留每个子计划的 `ExecutionResult`
+- `GraphQuerySDK` 在 `UNION RETURN p` 场景下，优先按子分支执行结果分别构造路径
+- 每个分支先形成自己的 path 集，再进行结果合并
+
+这样做之后，路径构造不再依赖单一的全局变量池，`UNION` 的路径语义显著变干净。
+
+```mermaid
+flowchart TD
+    A[UnionPart]
+    A --> B1[SubPlan 1 ExecutionResult]
+    A --> B2[SubPlan 2 ExecutionResult]
+    B1 --> C1[分支1独立构造路径]
+    B2 --> C2[分支2独立构造路径]
+    C1 --> D[合并路径结果]
+    C2 --> D
+```
+
+### 10.4 第三阶段：batch provenance 精确回填
+
+第三步收紧的是外部查询批处理链路：
+
+- `BatchRequest` 显式携带 `outputIdField`
+- `unbatch` 从“平均切片”改为“按 outputIdField 精确归属”
+- 最终渲染层不再把 `batchResults` 直接当成路径输入再次消费
+
+这一步解决的是：  
+**同一批外部结果必须准确回到原始查询所属的 source row，而不是靠位置猜测。**
+
+### 10.5 第四阶段：row-aware 路径构造
+
+第四步开始向真正的 record-based path reconstruction 靠拢：
+
+- `QueryResult` 新增 `rows`
+- `TuGraphAdapterImpl` 保留物理查询的行级变量映射
+- external 结果在执行侧会按 `sourceVariableName + inputIdField + outputIdField` 与 physical rows 合并
+- `GraphQuerySDK` 在构造路径时，优先使用 rows 进行记录感知的连接
+
+此时路径构造逻辑变成：
+
+1. 如果当前 row 已经包含下一跳需要的变量，则优先按 row 直接连接
+2. 如果 row 暂时缺少下一跳实体，且该边是虚拟边，则再回退到 provenance 过滤后的全局候选集
+3. 若 row-based 构造产生不完整 path，则丢弃该 path，不把半路径当成最终结果
+
+```mermaid
+flowchart TD
+    A[physical rows] --> C[row-aware path builder]
+    B[external rows with source provenance] --> C
+    C --> D{当前 row 是否已有下一跳变量?}
+    D -- 是 --> E[按 row 直接连接]
+    D -- 否且为虚拟边 --> F[按 linkage/provenance 补全]
+    E --> G[完整路径]
+    F --> G
+```
+
+### 10.6 当前状态
+
+当前实现已经具备以下能力：
+
+- `UNION` 路径优先按分支执行结果重建
+- batch 外部结果可按 `outputIdField` 精确回填
+- mixed pattern 的普通路径开始优先按 rows 构造
+- external rows 可以带上 source row 的变量上下文，减少交叉拼接
+- 不完整 path 不会再被错误地当作最终结果输出
+
+### 10.7 还没有完全做到的部分
+
+当前实现已经明显朝 record-based 演进，但还不是 100% full record-based，主要仍有两点边界：
+
+- external 查询的 rows 还不是统一、强约束的数据模型
+- 某些复杂虚拟边场景仍需要回退到全局候选集做补全
+
+也就是说，当前系统处于：
+
+- **主路径优先按 record/provenance 构造**
+- **复杂缺失场景允许有限 fallback**
+
+这是一个兼顾兼容性与长期演进的中间稳定形态。
+
+### 10.8 后续建议
+
+如果继续往最干净的方向推进，建议下一步聚焦两件事：
+
+1. **统一 external row schema**  
+   明确 sourceVar、targetVar、join key、row provenance 的标准表达。
+
+2. **进一步缩小 fallback 面积**  
+   让更多 mixed pattern 场景在 rows 完整时完全不依赖全局变量池。

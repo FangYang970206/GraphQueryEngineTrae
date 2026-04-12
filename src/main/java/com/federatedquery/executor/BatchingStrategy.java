@@ -28,6 +28,7 @@ public class BatchingStrategy {
             
             List<String> allInputIds = new ArrayList<>();
             String inputIdField = null;
+            String outputIdField = null;
             List<String> outputFields = new ArrayList<>();
             List<String> outputVariables = new ArrayList<>();
             
@@ -35,6 +36,9 @@ public class BatchingStrategy {
                 allInputIds.addAll(q.getInputIds());
                 if (inputIdField == null && q.getInputIdField() != null) {
                     inputIdField = q.getInputIdField();
+                }
+                if (outputIdField == null && q.getOutputIdField() != null) {
+                    outputIdField = q.getOutputIdField();
                 }
                 outputFields.addAll(q.getOutputFields());
                 outputVariables.addAll(q.getOutputVariables());
@@ -51,6 +55,7 @@ public class BatchingStrategy {
                 batch.setOperator(operator);
                 batch.setInputIds(new ArrayList<>());
                 batch.setInputIdField(inputIdField);
+                batch.setOutputIdField(outputIdField);
                 batch.setOutputFields(new ArrayList<>(outputFields));
                 batch.setOutputVariables(new ArrayList<>(outputVariables));
                 batch.setOriginalQueries(groupQueries);
@@ -66,6 +71,7 @@ public class BatchingStrategy {
                     batch.setOperator(operator);
                     batch.setInputIds(new ArrayList<>(batchIds));
                     batch.setInputIdField(inputIdField);
+                    batch.setOutputIdField(outputIdField);
                     batch.setOutputFields(new ArrayList<>(outputFields));
                     batch.setOutputVariables(new ArrayList<>(outputVariables));
                     batch.setOriginalQueries(groupQueries);
@@ -105,7 +111,36 @@ public class BatchingStrategy {
             QueryResult qr = new QueryResult();
             qr.setSuccess(true);
             qr.setEntities(new ArrayList<>(allEntities));
+            qr.setRows(new ArrayList<>(batchResult.getRows()));
             results.add(qr);
+            return results;
+        }
+
+        String outputIdField = batch.getOutputIdField();
+        if (outputIdField != null && !outputIdField.isEmpty()) {
+            for (ExternalQuery original : originalQueries) {
+                QueryResult qr = new QueryResult();
+                qr.setSuccess(true);
+                qr.setDataSource(batchResult.getDataSource());
+                
+                Set<String> expectedIds = new LinkedHashSet<>(original.getInputIds());
+                List<GraphEntity> queryEntities = new ArrayList<>();
+                for (GraphEntity entity : allEntities) {
+                    if (matchesOutputToInput(entity, outputIdField, expectedIds)) {
+                        queryEntities.add(entity);
+                    }
+                }
+                qr.setEntities(queryEntities);
+                
+                List<QueryResult.ResultRow> rows = new ArrayList<>();
+                for (QueryResult.ResultRow row : batchResult.getRows()) {
+                    if (matchesRowToInput(row, outputIdField, expectedIds)) {
+                        rows.add(row);
+                    }
+                }
+                qr.setRows(rows);
+                results.add(qr);
+            }
             return results;
         }
         
@@ -125,10 +160,31 @@ public class BatchingStrategy {
             }
             
             qr.setEntities(queryEntities);
+            qr.setRows(new ArrayList<>());
             results.add(qr);
         }
         
         return results;
+    }
+
+    private boolean matchesOutputToInput(GraphEntity entity, String outputIdField, Set<String> expectedIds) {
+        if (entity == null || expectedIds.isEmpty()) {
+            return false;
+        }
+        Object outputId = entity.getProperties().get(outputIdField);
+        return outputId != null && expectedIds.contains(String.valueOf(outputId));
+    }
+
+    private boolean matchesRowToInput(QueryResult.ResultRow row, String outputIdField, Set<String> expectedIds) {
+        if (row == null || row.getEntitiesByVariable() == null || expectedIds.isEmpty()) {
+            return false;
+        }
+        for (GraphEntity entity : row.getEntitiesByVariable().values()) {
+            if (matchesOutputToInput(entity, outputIdField, expectedIds)) {
+                return true;
+            }
+        }
+        return false;
     }
     
     public int getMaxBatchSize() {

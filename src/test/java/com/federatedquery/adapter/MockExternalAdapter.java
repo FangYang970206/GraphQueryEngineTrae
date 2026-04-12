@@ -77,15 +77,19 @@ public class MockExternalAdapter implements DataSourceAdapter {
         
         List<GraphEntity> entities = mock.execute(query);
         result.setEntities(entities);
-        QueryResult.ResultRow row = new QueryResult.ResultRow();
-        row.setRowId(query.getId() != null ? query.getId() + "#0" : "mock#0");
-        for (GraphEntity entity : entities) {
-            if (entity.getVariableName() != null && !entity.getVariableName().isEmpty()) {
-                row.put(entity.getVariableName(), entity);
+        if (!mock.getRows().isEmpty()) {
+            result.setRows(mock.copyRows(query.getId() != null ? query.getId() : "mock"));
+        } else {
+            QueryResult.ResultRow row = new QueryResult.ResultRow();
+            row.setRowId(query.getId() != null ? query.getId() + "#0" : "mock#0");
+            for (GraphEntity entity : entities) {
+                if (entity.getVariableName() != null && !entity.getVariableName().isEmpty()) {
+                    row.put(entity.getVariableName(), entity);
+                }
             }
-        }
-        if (!row.getEntitiesByVariable().isEmpty()) {
-            result.addRow(row);
+            if (!row.getEntitiesByVariable().isEmpty()) {
+                result.addRow(row);
+            }
         }
         result.setSuccess(true);
         result.setExecutionTimeMs(System.currentTimeMillis() - startTime);
@@ -104,6 +108,7 @@ public class MockExternalAdapter implements DataSourceAdapter {
     
     public static class MockResponse {
         private List<GraphEntity> entities = new ArrayList<>();
+        private List<QueryResult.ResultRow> rows = new ArrayList<>();
         private int delayMs = 0;
         private boolean error = false;
         private String errorMessage;
@@ -117,6 +122,21 @@ public class MockExternalAdapter implements DataSourceAdapter {
         
         public MockResponse addEntity(GraphEntity entity) {
             this.entities.add(entity);
+            return this;
+        }
+
+        public MockResponse addRowEntities(GraphEntity... rowEntities) {
+            QueryResult.ResultRow row = new QueryResult.ResultRow();
+            row.setRowId("mock-row-" + rows.size());
+            for (GraphEntity entity : rowEntities) {
+                this.entities.add(entity);
+                if (entity.getVariableName() != null && !entity.getVariableName().isEmpty()) {
+                    row.put(entity.getVariableName(), entity);
+                }
+            }
+            if (!row.getEntitiesByVariable().isEmpty()) {
+                this.rows.add(row);
+            }
             return this;
         }
         
@@ -150,6 +170,22 @@ public class MockExternalAdapter implements DataSourceAdapter {
         
         public int getDelayMs() {
             return delayMs;
+        }
+
+        public List<QueryResult.ResultRow> getRows() {
+            return rows;
+        }
+
+        public List<QueryResult.ResultRow> copyRows(String idPrefix) {
+            List<QueryResult.ResultRow> copiedRows = new ArrayList<>();
+            for (int i = 0; i < rows.size(); i++) {
+                QueryResult.ResultRow source = rows.get(i);
+                QueryResult.ResultRow copy = new QueryResult.ResultRow();
+                copy.setRowId(idPrefix + "#row-" + i);
+                copy.getEntitiesByVariable().putAll(source.getEntitiesByVariable());
+                copiedRows.add(copy);
+            }
+            return copiedRows;
         }
         
         public boolean isError() {

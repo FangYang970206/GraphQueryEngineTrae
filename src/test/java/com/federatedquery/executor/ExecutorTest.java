@@ -109,6 +109,74 @@ class ExecutorTest {
             assertTrue(batch.getInputIds().contains("id" + i), "必须包含id" + i);
         }
     }
+
+    @Test
+    @DisplayName("Unbatch uses outputIdField to restore exact query ownership")
+    void unbatchUsesOutputIdField() {
+        BatchingStrategy strategy = new BatchingStrategy();
+
+        ExternalQuery q1 = new ExternalQuery();
+        q1.setId("q1");
+        q1.setDataSource("mock-service");
+        q1.setOperator("getByIds");
+        q1.setOutputIdField("parentResId");
+        q1.addInputId("ltp1");
+
+        ExternalQuery q2 = new ExternalQuery();
+        q2.setId("q2");
+        q2.setDataSource("mock-service");
+        q2.setOperator("getByIds");
+        q2.setOutputIdField("parentResId");
+        q2.addInputId("ltp2");
+
+        List<BatchRequest> batches = strategy.batch(List.of(q1, q2));
+        assertEquals(1, batches.size(), "应该只生成一个批次");
+
+        BatchRequest batch = batches.get(0);
+        assertEquals("parentResId", batch.getOutputIdField(), "批次应保留 outputIdField");
+
+        GraphEntity entity1 = GraphEntity.node("kpi1", "KPI");
+        entity1.setVariableName("target");
+        entity1.setProperty("name", "KPI001");
+        entity1.setProperty("parentResId", "ltp1");
+
+        GraphEntity entity2 = GraphEntity.node("kpi2", "KPI");
+        entity2.setVariableName("target");
+        entity2.setProperty("name", "KPI002");
+        entity2.setProperty("parentResId", "ltp2");
+
+        QueryResult batchResult = new QueryResult();
+        batchResult.setSuccess(true);
+        batchResult.setDataSource("mock-service");
+        batchResult.setEntities(new ArrayList<>(List.of(entity1, entity2)));
+
+        QueryResult.ResultRow row1 = new QueryResult.ResultRow();
+        row1.setRowId("row1");
+        row1.put("target", entity1);
+        batchResult.addRow(row1);
+
+        QueryResult.ResultRow row2 = new QueryResult.ResultRow();
+        row2.setRowId("row2");
+        row2.put("target", entity2);
+        batchResult.addRow(row2);
+
+        List<QueryResult> results = strategy.unbatch(batch, batchResult);
+        assertEquals(2, results.size(), "unbatch 后应返回两个查询结果");
+
+        QueryResult first = results.get(0);
+        assertEquals(1, first.getEntities().size(), "q1 应该只拿到 1 个实体");
+        assertEquals("ltp1", first.getEntities().get(0).getProperty("parentResId"), "q1 实体应归属于 ltp1");
+        assertEquals("KPI001", first.getEntities().get(0).getProperty("name"), "q1 应拿到 KPI001");
+        assertEquals(1, first.getRows().size(), "q1 应只有 1 行");
+        assertEquals("KPI001", first.getRows().get(0).getEntitiesByVariable().get("target").getProperty("name"), "q1 行应只包含 KPI001");
+
+        QueryResult second = results.get(1);
+        assertEquals(1, second.getEntities().size(), "q2 应该只拿到 1 个实体");
+        assertEquals("ltp2", second.getEntities().get(0).getProperty("parentResId"), "q2 实体应归属于 ltp2");
+        assertEquals("KPI002", second.getEntities().get(0).getProperty("name"), "q2 应拿到 KPI002");
+        assertEquals(1, second.getRows().size(), "q2 应只有 1 行");
+        assertEquals("KPI002", second.getRows().get(0).getEntitiesByVariable().get("target").getProperty("name"), "q2 行应只包含 KPI002");
+    }
     
     @Test
     @DisplayName("Timeout handling returns result")
