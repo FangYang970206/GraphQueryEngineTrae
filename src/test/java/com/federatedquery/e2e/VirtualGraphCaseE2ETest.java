@@ -289,44 +289,23 @@ class VirtualGraphCaseE2ETest {
         assertNotNull(result, "结果不能为空");
         logger.info("Case1 SDK返回结果: {}", result);
         
-        JsonNode jsonNode = objectMapper.readTree(result);
-        
-        if (jsonNode.has("results")) {
-            jsonNode = jsonNode.get("results");
-        }
-        
-        assertTrue(jsonNode.isArray(), "结果应该是数组");
-        
-        int ltpCount = 0;
-        int alarmCount = 0;
-        int kpiCount = 0;
-        
+        JsonNode jsonNode = extractResultsArray(result);
+        assertEquals(5, jsonNode.size(), "Case1 应该精确返回 5 条 ne-target 记录");
+
+        Set<String> expectedRows = Set.of(
+            "ne={DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5} | target={id=db82ad76-8bdc-4f4b-96a0-a5e91c6861fb,label=LTP,name=LTP001,parentResId=eccc2c94-6a31-45ea-a16e-0c709939cbe5,resId=db82ad76-8bdc-4f4b-96a0-a5e91c6861fb}",
+            "ne={DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5} | target={id=c889973b-8bd7-4eb9-899b-b1cc9bf18a2e,label=LTP,name=LTP002,parentResId=eccc2c94-6a31-45ea-a16e-0c709939cbe5,resId=c889973b-8bd7-4eb9-899b-b1cc9bf18a2e}",
+            "ne={DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5} | target={CLEARTIME=1775825951299,CSN=0079bb0f-0e0a-44de-b595-cab5c22324ef,MEDN=388581df-50a3-4d9f-96d4-15faf36f9caf,MENAME=ALARM001,OCCURTIME=1775825151299,id=0079bb0f-0e0a-44de-b595-cab5c22324ef,label=ALARM}",
+            "ne={DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5} | target={CLEARTIME=1775825551299,CSN=afa87ad3-0834-467c-ba2e-1315fb9ba0cb,MEDN=388581df-50a3-4d9f-96d4-15faf36f9caf,MENAME=ALARM002,OCCURTIME=1775825251299,id=afa87ad3-0834-467c-ba2e-1315fb9ba0cb,label=ALARM}",
+            "ne={DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5} | target={id=0079bb0f-0e0a-44de-b595-cab5c22324ef,label=KPI,name=KPI001,parentResId=eccc2c94-6a31-45ea-a16e-0c709939cbe5,resId=0079bb0f-0e0a-44de-b595-cab5c22324ef,time=1775825156755}"
+        );
+
+        Set<String> actualRows = new LinkedHashSet<>();
         for (JsonNode row : jsonNode) {
-            assertTrue(row.has("ne"), "每行应该包含ne字段");
-            assertTrue(row.has("target"), "每行应该包含target字段");
-            
-            JsonNode ne = row.get("ne");
-            assertEquals("NetworkElement", ne.get("label").asText(), "ne的label应该是NetworkElement");
-            assertEquals("NE001", ne.get("name").asText(), "ne的name应该是NE001");
-            
-            JsonNode target = row.get("target");
-            String targetLabel = target.get("label").asText();
-            
-            if ("LTP".equals(targetLabel)) {
-                ltpCount++;
-            } else if ("ALARM".equals(targetLabel)) {
-                alarmCount++;
-            } else if ("KPI".equals(targetLabel)) {
-                kpiCount++;
-            }
+            actualRows.add(buildRowSignature(row, "ne", "target"));
         }
-        
-        assertEquals(2, ltpCount, "应该有2个LTP");
-        assertEquals(2, alarmCount, "应该有2个ALARM");
-        assertEquals(1, kpiCount, "应该有1个KPI");
-        assertEquals(5, jsonNode.size(), "总共应该有5条记录");
-        
-        logger.info("Case1测试通过: LTP={}, ALARM={}, KPI={}", ltpCount, alarmCount, kpiCount);
+
+        assertEquals(expectedRows, actualRows, "Case1 返回的 ne-target 集合必须与整张图构造完全一致");
     }
     
     @Test
@@ -378,23 +357,30 @@ class VirtualGraphCaseE2ETest {
     @DisplayName("Case3: USING SNAPSHOT和PROJECT BY查询")
     @DisabledIf("isTuGraphNotAvailable")
     void testCase3() throws Exception {
-        String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps|NEHasAlarms|NEHasKPI]->(target) RETURN ne,target";
+        String cypher = "USING SNAPSHOT('latest', 1762940006544) ON [ALARM,KPI] MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps|NEHasAlarms|NEHasKPI]->(target) RETURN ne,target PROJECT BY {ALARM:[MENAME],KPI:[name]}";
         
         String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         logger.info("Case3 SDK返回结果: {}", result);
         
-        JsonNode jsonNode = objectMapper.readTree(result);
-        
-        if (jsonNode.has("results")) {
-            jsonNode = jsonNode.get("results");
+        JsonNode jsonNode = extractResultsArray(result);
+        assertEquals(5, jsonNode.size(), "Case3 应该精确返回 5 条投影后的 ne-target 记录");
+
+        Set<String> expectedRows = Set.of(
+            "ne={DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5} | target={id=db82ad76-8bdc-4f4b-96a0-a5e91c6861fb,label=LTP,name=LTP001,parentResId=eccc2c94-6a31-45ea-a16e-0c709939cbe5,resId=db82ad76-8bdc-4f4b-96a0-a5e91c6861fb}",
+            "ne={DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5} | target={id=c889973b-8bd7-4eb9-899b-b1cc9bf18a2e,label=LTP,name=LTP002,parentResId=eccc2c94-6a31-45ea-a16e-0c709939cbe5,resId=c889973b-8bd7-4eb9-899b-b1cc9bf18a2e}",
+            "ne={DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5} | target={MENAME=ALARM001,label=ALARM}",
+            "ne={DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5} | target={MENAME=ALARM002,label=ALARM}",
+            "ne={DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5} | target={label=KPI,name=KPI001}"
+        );
+
+        Set<String> actualRows = new LinkedHashSet<>();
+        for (JsonNode row : jsonNode) {
+            actualRows.add(buildRowSignature(row, "ne", "target"));
         }
-        
-        assertTrue(jsonNode.isArray(), "结果应该是数组");
-        assertTrue(jsonNode.size() >= 2, "应该至少有2条记录");
-        
-        logger.info("Case3测试通过: 共{}条记录", jsonNode.size());
+
+        assertEquals(expectedRows, actualRows, "Case3 返回结果必须同时满足 Snapshot 查询与 Project By 投影后的精确输出");
     }
     
     @Test
@@ -408,22 +394,18 @@ class VirtualGraphCaseE2ETest {
         assertNotNull(result, "结果不能为空");
         logger.info("Case4 SDK返回结果: {}", result);
         
-        JsonNode jsonNode = objectMapper.readTree(result);
-        
-        if (jsonNode.has("results")) {
-            jsonNode = jsonNode.get("results");
-        }
-        
-        assertTrue(jsonNode.isArray(), "结果应该是数组");
+        JsonNode jsonNode = extractResultsArray(result);
         assertEquals(1, jsonNode.size(), "应该有1条ALARM记录");
         
         JsonNode firstRow = jsonNode.get(0);
         assertTrue(firstRow.has("alarm"), "应该包含alarm字段");
         
         JsonNode alarm = firstRow.get("alarm");
-        assertEquals("ALARM", alarm.get("label").asText(), "label应该是ALARM");
-        assertEquals("ALARM001", alarm.get("MENAME").asText(), "MENAME应该是ALARM001");
-        assertEquals("0079bb0f-0e0a-44de-b595-cab5c22324ef", alarm.get("CSN").asText(), "CSN应该匹配");
+        assertEquals(
+            "{CLEARTIME=1775825951299,CSN=0079bb0f-0e0a-44de-b595-cab5c22324ef,MEDN=388581df-50a3-4d9f-96d4-15faf36f9caf,MENAME=ALARM001,OCCURTIME=1775825151299,id=0079bb0f-0e0a-44de-b595-cab5c22324ef,label=ALARM}",
+            buildEntitySignature(alarm),
+            "Case4 返回的 ALARM 实体字段和值必须与构造数据完全一致"
+        );
         
         logger.info("Case4测试通过: 成功查询到ALARM001");
     }
@@ -439,28 +421,16 @@ class VirtualGraphCaseE2ETest {
         assertNotNull(result, "结果不能为空");
         logger.info("Case5 SDK返回结果: {}", result);
         
-        JsonNode jsonNode = objectMapper.readTree(result);
-        
-        if (jsonNode.has("results")) {
-            jsonNode = jsonNode.get("results");
-        }
-        
-        assertTrue(jsonNode.isArray(), "结果应该是数组");
-        
-        // Note: 当前实现不支持反向虚拟边查询的正确执行顺序
-        // 正确的执行顺序应该是：先查询ALARM，然后用MEDN查询NetworkElement
-        // 当前实现是：先查询所有NetworkElement，然后用DN查询ALARM
-        // 因此返回的是所有NetworkElement，而不是根据ALARM条件过滤后的NetworkElement
-        // 这是一个已知的实现限制，需要后续优化
-        assertTrue(jsonNode.size() >= 1, "应该至少有1条NetworkElement记录");
-        
-        for (JsonNode row : jsonNode) {
-            assertTrue(row.has("ne"), "应该包含ne字段");
-            JsonNode ne = row.get("ne");
-            assertEquals("NetworkElement", ne.get("label").asText(), "label应该是NetworkElement");
-        }
-        
-        logger.info("Case5测试通过: 返回{}条NetworkElement记录（注意：当前实现不支持反向虚拟边的正确过滤）", jsonNode.size());
+        JsonNode jsonNode = extractResultsArray(result);
+        assertEquals(1, jsonNode.size(), "Case5 应该只返回与 ALARM002 精确关联的 1 条 NetworkElement");
+
+        JsonNode firstRow = jsonNode.get(0);
+        assertTrue(firstRow.has("ne"), "结果必须包含 ne 字段");
+        assertEquals(
+            "{DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5}",
+            buildEntitySignature(firstRow.get("ne")),
+            "Case5 必须精确返回与 ALARM002 关联的 NE001"
+        );
     }
     
     @Test
@@ -470,29 +440,53 @@ class VirtualGraphCaseE2ETest {
         String cypher = "MATCH (ne:NetworkElement) RETURN ne";
         String result = sdk.execute(cypher);
         logger.info("数据完整性 - NetworkElement查询结果: {}", result);
-        JsonNode jsonNode = objectMapper.readTree(result);
-        if (jsonNode.has("results")) {
-            jsonNode = jsonNode.get("results");
-        }
+        JsonNode jsonNode = extractResultsArray(result);
         assertEquals(2, jsonNode.size(), "应该有2个NetworkElement");
+        Set<String> expectedNetworkElements = Set.of(
+            "{DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5}",
+            "{DN=a158b427-4a65-4adf-9096-3c8225519cca,id=552dddad-84c4-4d5e-9014-481443ec23b5,label=NetworkElement,name=NE002,resId=552dddad-84c4-4d5e-9014-481443ec23b5}"
+        );
+        Set<String> actualNetworkElements = new LinkedHashSet<>();
+        for (JsonNode row : jsonNode) {
+            assertTrue(row.has("ne"), "NetworkElement 结果必须包含 ne 字段");
+            actualNetworkElements.add(buildEntitySignature(row.get("ne")));
+        }
+        assertEquals(expectedNetworkElements, actualNetworkElements, "NetworkElement 基础数据必须与构造数据完全一致");
         
         cypher = "MATCH (ltp:LTP) RETURN ltp";
         result = sdk.execute(cypher);
         logger.info("数据完整性 - LTP查询结果: {}", result);
-        jsonNode = objectMapper.readTree(result);
-        if (jsonNode.has("results")) {
-            jsonNode = jsonNode.get("results");
-        }
+        jsonNode = extractResultsArray(result);
         assertEquals(4, jsonNode.size(), "应该有4个LTP");
+        Set<String> expectedLtps = Set.of(
+            "{id=db82ad76-8bdc-4f4b-96a0-a5e91c6861fb,label=LTP,name=LTP001,parentResId=eccc2c94-6a31-45ea-a16e-0c709939cbe5,resId=db82ad76-8bdc-4f4b-96a0-a5e91c6861fb}",
+            "{id=c889973b-8bd7-4eb9-899b-b1cc9bf18a2e,label=LTP,name=LTP002,parentResId=eccc2c94-6a31-45ea-a16e-0c709939cbe5,resId=c889973b-8bd7-4eb9-899b-b1cc9bf18a2e}",
+            "{id=537ae2db-80d6-4b13-9cee-140a9af811ca,label=LTP,name=LTP003,parentResId=552dddad-84c4-4d5e-9014-481443ec23b5,resId=537ae2db-80d6-4b13-9cee-140a9af811ca}",
+            "{id=7c013137-db19-4f21-bbbd-6908cd2033d8,label=LTP,name=LTP004,parentResId=552dddad-84c4-4d5e-9014-481443ec23b5,resId=7c013137-db19-4f21-bbbd-6908cd2033d8}"
+        );
+        Set<String> actualLtps = new LinkedHashSet<>();
+        for (JsonNode row : jsonNode) {
+            assertTrue(row.has("ltp"), "LTP 结果必须包含 ltp 字段");
+            actualLtps.add(buildEntitySignature(row.get("ltp")));
+        }
+        assertEquals(expectedLtps, actualLtps, "LTP 基础数据必须与构造数据完全一致");
         
         cypher = "MATCH (ne:NetworkElement)-[:NEHasLtps]->(ltp:LTP) RETURN ne, ltp";
         result = sdk.execute(cypher);
         logger.info("数据完整性 - 关系查询结果: {}", result);
-        jsonNode = objectMapper.readTree(result);
-        if (jsonNode.has("results")) {
-            jsonNode = jsonNode.get("results");
-        }
+        jsonNode = extractResultsArray(result);
         assertEquals(4, jsonNode.size(), "应该有4条NEHasLtps关系");
+        Set<String> expectedRelations = Set.of(
+            "ne={DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5} | ltp={id=db82ad76-8bdc-4f4b-96a0-a5e91c6861fb,label=LTP,name=LTP001,parentResId=eccc2c94-6a31-45ea-a16e-0c709939cbe5,resId=db82ad76-8bdc-4f4b-96a0-a5e91c6861fb}",
+            "ne={DN=388581df-50a3-4d9f-96d4-15faf36f9caf,id=eccc2c94-6a31-45ea-a16e-0c709939cbe5,label=NetworkElement,name=NE001,resId=eccc2c94-6a31-45ea-a16e-0c709939cbe5} | ltp={id=c889973b-8bd7-4eb9-899b-b1cc9bf18a2e,label=LTP,name=LTP002,parentResId=eccc2c94-6a31-45ea-a16e-0c709939cbe5,resId=c889973b-8bd7-4eb9-899b-b1cc9bf18a2e}",
+            "ne={DN=a158b427-4a65-4adf-9096-3c8225519cca,id=552dddad-84c4-4d5e-9014-481443ec23b5,label=NetworkElement,name=NE002,resId=552dddad-84c4-4d5e-9014-481443ec23b5} | ltp={id=537ae2db-80d6-4b13-9cee-140a9af811ca,label=LTP,name=LTP003,parentResId=552dddad-84c4-4d5e-9014-481443ec23b5,resId=537ae2db-80d6-4b13-9cee-140a9af811ca}",
+            "ne={DN=a158b427-4a65-4adf-9096-3c8225519cca,id=552dddad-84c4-4d5e-9014-481443ec23b5,label=NetworkElement,name=NE002,resId=552dddad-84c4-4d5e-9014-481443ec23b5} | ltp={id=7c013137-db19-4f21-bbbd-6908cd2033d8,label=LTP,name=LTP004,parentResId=552dddad-84c4-4d5e-9014-481443ec23b5,resId=7c013137-db19-4f21-bbbd-6908cd2033d8}"
+        );
+        Set<String> actualRelations = new LinkedHashSet<>();
+        for (JsonNode row : jsonNode) {
+            actualRelations.add(buildRowSignature(row, "ne", "ltp"));
+        }
+        assertEquals(expectedRelations, actualRelations, "NEHasLtps 关系必须与整张图构造完全一致");
         
         logger.info("数据完整性验证通过: 2个NetworkElement, 4个LTP, 4条关系");
     }
@@ -728,6 +722,37 @@ class VirtualGraphCaseE2ETest {
     
     static boolean isTuGraphNotAvailable() {
         return !tuGraphAvailable;
+    }
+
+    private JsonNode extractResultsArray(String result) throws Exception {
+        JsonNode jsonNode = objectMapper.readTree(result);
+        if (jsonNode.has("results")) {
+            jsonNode = jsonNode.get("results");
+        }
+        assertTrue(jsonNode.isArray(), "结果应该是数组");
+        return jsonNode;
+    }
+
+    private String buildRowSignature(JsonNode row, String... variables) {
+        assertTrue(row.isObject(), "结果行必须是对象");
+        List<String> parts = new ArrayList<>();
+        for (String variable : variables) {
+            assertTrue(row.has(variable), "结果行必须包含字段: " + variable);
+            parts.add(variable + "=" + buildEntitySignature(row.get(variable)));
+        }
+        return String.join(" | ", parts);
+    }
+
+    private String buildEntitySignature(JsonNode entity) {
+        assertTrue(entity.isObject(), "实体必须是对象");
+        TreeMap<String, String> fields = new TreeMap<>();
+        entity.fields().forEachRemaining(entry -> fields.put(entry.getKey(), entry.getValue().asText()));
+
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<String, String> entry : fields.entrySet()) {
+            parts.add(entry.getKey() + "=" + entry.getValue());
+        }
+        return "{" + String.join(",", parts) + "}";
     }
 
     private String buildPathSignature(JsonNode path) {

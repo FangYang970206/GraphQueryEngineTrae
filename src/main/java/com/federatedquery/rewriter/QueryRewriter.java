@@ -49,7 +49,14 @@ public class QueryRewriter {
             rewriteSingleQuery(query.getSingleQueries().get(0), plan);
         }
         
-        if (statement.getProjectBy() != null) {
+        if (!query.getSingleQueries().isEmpty()) {
+            Statement.SingleQuery firstQuery = query.getSingleQueries().get(0);
+            if (firstQuery.getProjectBy() != null) {
+                plan.getGlobalContext().setProjectBy(firstQuery.getProjectBy());
+            } else if (statement.getProjectBy() != null) {
+                plan.getGlobalContext().setProjectBy(statement.getProjectBy());
+            }
+        } else if (statement.getProjectBy() != null) {
             plan.getGlobalContext().setProjectBy(statement.getProjectBy());
         }
         

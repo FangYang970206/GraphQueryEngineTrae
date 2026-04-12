@@ -573,6 +573,11 @@ public class GraphQuerySDK {
         if (!results.isEmpty()) {
             return results;
         }
+
+        List<Map<String, Object>> rowResults = buildRowResults(returnInfos, rows, entitiesByVarName);
+        if (!rowResults.isEmpty()) {
+            return rowResults;
+        }
         
         String primaryVar = returnInfos.size() > 1 ? returnInfos.get(returnInfos.size() - 1).variableName : returnInfos.get(0).variableName;
         List<GraphEntity> primaryEntities = entitiesByVarName.getOrDefault(primaryVar, new ArrayList<>());
@@ -611,6 +616,96 @@ public class GraphQuerySDK {
         }
         
         return results;
+    }
+
+    private List<Map<String, Object>> buildRowResults(
+            List<ReturnInfo> returnInfos,
+            List<QueryResult.ResultRow> rows,
+            Map<String, List<GraphEntity>> entitiesByVarName) {
+        if (returnInfos == null || returnInfos.isEmpty() || rows == null || rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<QueryResult.ResultRow> matchedRows = new ArrayList<>();
+        int maxWidth = 0;
+        for (QueryResult.ResultRow row : rows) {
+            if (row == null || row.getEntitiesByVariable() == null || row.getEntitiesByVariable().isEmpty()) {
+                continue;
+            }
+
+            boolean containsAllReturnVariables = true;
+            for (ReturnInfo info : returnInfos) {
+                if (!row.getEntitiesByVariable().containsKey(info.variableName)) {
+                    containsAllReturnVariables = false;
+                    break;
+                }
+            }
+
+            if (!containsAllReturnVariables) {
+                continue;
+            }
+
+            int width = row.getEntitiesByVariable().size();
+            if (width > maxWidth) {
+                matchedRows.clear();
+                maxWidth = width;
+            }
+            if (width == maxWidth) {
+                matchedRows.add(row);
+            }
+        }
+
+        boolean rowsCoverReturnedEntities = true;
+        if (returnInfos.size() > 1 && entitiesByVarName != null) {
+            for (ReturnInfo info : returnInfos) {
+                List<GraphEntity> entities = entitiesByVarName.get(info.variableName);
+                int uniqueEntityCount = countUniqueEntities(entities);
+                if (uniqueEntityCount > matchedRows.size()) {
+                    rowsCoverReturnedEntities = false;
+                    break;
+                }
+            }
+        }
+
+        boolean shouldUseRows = rowsCoverReturnedEntities && (
+                maxWidth > returnInfos.size()
+                        || (returnInfos.size() > 1 && matchedRows.size() > 1)
+        );
+        if (matchedRows.isEmpty() || !shouldUseRows) {
+            return Collections.emptyList();
+        }
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (QueryResult.ResultRow row : matchedRows) {
+            Map<String, Object> resultRow = new LinkedHashMap<>();
+            for (ReturnInfo info : returnInfos) {
+                GraphEntity entity = row.getEntitiesByVariable().get(info.variableName);
+                if (entity != null) {
+                    resultRow.put(info.variableName, entityToTuGraphFormat(entity));
+                }
+            }
+            if (!resultRow.isEmpty()) {
+                String signature = resultRow.toString();
+                if (seen.add(signature)) {
+                    results.add(resultRow);
+                }
+            }
+        }
+
+        return results;
+    }
+
+    private int countUniqueEntities(List<GraphEntity> entities) {
+        if (entities == null || entities.isEmpty()) {
+            return 0;
+        }
+
+        Set<String> uniqueKeys = new LinkedHashSet<>();
+        for (GraphEntity entity : entities) {
+            uniqueKeys.add(buildGraphEntityDedupKey(entity));
+        }
+        return uniqueKeys.size();
     }
 
     private Map<String, List<GraphEntity>> collectEntitiesByVarName(

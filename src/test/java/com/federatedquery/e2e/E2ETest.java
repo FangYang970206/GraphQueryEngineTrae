@@ -62,6 +62,8 @@ class E2ETest {
         neHasKpi.setEdgeType("NEHasKPI");
         neHasKpi.setTargetDataSource("kpi-service");
         neHasKpi.setOperatorName("getKPIByNeIds");
+        neHasKpi.setTargetLabel("KPI");
+        neHasKpi.getIdMapping().put("_id", "parentResId");
         neHasKpi.setLastHopOnly(true);
         registry.registerVirtualEdge(neHasKpi);
         
@@ -69,6 +71,8 @@ class E2ETest {
         neHasAlarms.setEdgeType("NEHasAlarms");
         neHasAlarms.setTargetDataSource("alarm-service");
         neHasAlarms.setOperatorName("getAlarmsByNeIds");
+        neHasAlarms.setTargetLabel("Alarm");
+        neHasAlarms.getIdMapping().put("_id", "parentResId");
         neHasAlarms.setLastHopOnly(true);
         registry.registerVirtualEdge(neHasAlarms);
         
@@ -76,6 +80,8 @@ class E2ETest {
         ltpHasKpi2.setEdgeType("LTPHasKPI2");
         ltpHasKpi2.setTargetDataSource("kpi-service");
         ltpHasKpi2.setOperatorName("getKPI2ByLtpIds");
+        ltpHasKpi2.setTargetLabel("KPI");
+        ltpHasKpi2.getIdMapping().put("_id", "parentResId");
         ltpHasKpi2.setLastHopOnly(true);
         registry.registerVirtualEdge(ltpHasKpi2);
         
@@ -149,28 +155,38 @@ class E2ETest {
     @Test
     @DisplayName("示例1: 多关系类型混合查询 - 返回TuGraph格式")
     void example1_MultipleRelTypesMixedQuery() throws Exception {
-        GraphEntity neEntity = createNEEntity("ne1", "NE001", "Router");
-        neEntity.setVariableName("ne");
-        
-        GraphEntity ltpEntity = createLTPEntity("ltp1", "LTP1", "Port");
-        ltpEntity.setVariableName("target");
-        
-        GraphEntity kpiEntity = createKPIEntity("kpi1", "cpu_usage", 85.5);
+        GraphEntity neRow1 = createNEEntity("ne1", "NE001", "Router");
+        neRow1.setVariableName("ne");
+        GraphEntity ltpRow1 = createLTPEntity("ltp1", "LTP001", "Port");
+        ltpRow1.setVariableName("target");
+
+        GraphEntity neRow2 = createNEEntity("ne1", "NE001", "Router");
+        neRow2.setVariableName("ne");
+        GraphEntity ltpRow2 = createLTPEntity("ltp2", "LTP002", "Port");
+        ltpRow2.setVariableName("target");
+
+        GraphEntity kpiEntity = createKPIEntity("kpi1", "KPI001", 85.5);
         kpiEntity.setVariableName("target");
-        kpiEntity.setProperty("parentResId", "ltp1");
-        
-        GraphEntity alarmEntity = createAlarmEntity("alarm1", "critical", "High CPU");
-        alarmEntity.setVariableName("target");
-        
+        kpiEntity.setProperty("parentResId", "ne1");
+
+        GraphEntity alarmEntity1 = createAlarmEntity("alarm1", "critical", "High CPU");
+        alarmEntity1.setVariableName("target");
+        alarmEntity1.setProperty("parentResId", "ne1");
+
+        GraphEntity alarmEntity2 = createAlarmEntity("alarm2", "major", "Power Issue");
+        alarmEntity2.setVariableName("target");
+        alarmEntity2.setProperty("parentResId", "ne1");
+
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                .addEntity(neEntity)
-                .addEntity(ltpEntity));
-        
+                .addRowEntities(neRow1, ltpRow1)
+                .addRowEntities(neRow2, ltpRow2));
+
         kpiAdapter.registerResponse("getKPIByNeIds", MockExternalAdapter.MockResponse.create()
-                .addEntity(kpiEntity));
-        
+                .addRowEntities(kpiEntity));
+
         alarmAdapter.registerResponse("getAlarmsByNeIds", MockExternalAdapter.MockResponse.create()
-                .addEntity(alarmEntity));
+                .addRowEntities(alarmEntity1)
+                .addRowEntities(alarmEntity2));
         
         String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[r:NEHasLtps|NEHasAlarms|NEHasKPI]->(target) RETURN ne, target";
         
@@ -183,25 +199,41 @@ class E2ETest {
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(5, json.size(), "结果数组应该有5条记录");
         
-        Set<String> targetTypes = new HashSet<>();
+        Set<String> expectedTargets = Set.of(
+                "LTP:LTP001",
+                "LTP:LTP002",
+                "KPI:KPI001",
+                "Alarm:critical",
+                "Alarm:major"
+        );
+        Set<String> actualTargets = new LinkedHashSet<>();
+
         for (int i = 0; i < json.size(); i++) {
             JsonNode row = json.get(i);
             assertTrue(row.isObject(), "每行必须是对象");
             assertTrue(row.has("ne"), "每行必须有ne字段");
             assertTrue(row.has("target"), "每行必须有target字段");
-            
+
             JsonNode neNode = row.get("ne");
             assertTrue(neNode.has("label"), "ne必须有label字段");
             assertEquals("NetworkElement", neNode.get("label").asText(), "ne的label必须是NetworkElement");
-            
+            assertEquals("NE001", neNode.get("name").asText(), "ne.name 必须是 NE001");
+
             JsonNode targetNode = row.get("target");
             assertTrue(targetNode.has("label"), "target必须有label字段");
             String targetLabel = targetNode.get("label").asText();
-            targetTypes.add(targetLabel);
+            if ("LTP".equals(targetLabel) || "KPI".equals(targetLabel)) {
+                assertTrue(targetNode.has("name"), "LTP/KPI 必须有 name 字段");
+                actualTargets.add(targetLabel + ":" + targetNode.get("name").asText());
+            } else if ("Alarm".equals(targetLabel)) {
+                assertTrue(targetNode.has("severity"), "Alarm 必须有 severity 字段");
+                actualTargets.add(targetLabel + ":" + targetNode.get("severity").asText());
+            } else {
+                fail("target 出现未预期类型: " + targetLabel);
+            }
         }
-        
-        assertTrue(targetTypes.contains("LTP") || targetTypes.contains("KPI") || targetTypes.contains("Alarm"), 
-                "target必须包含LTP、KPI或Alarm类型");
+
+        assertEquals(expectedTargets, actualTargets, "多关系类型混合查询必须精确返回 5 条 target 结果");
     }
     
     @Test

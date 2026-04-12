@@ -76,9 +76,24 @@ public class MockExternalAdapter implements DataSourceAdapter {
         }
         
         List<GraphEntity> entities = mock.execute(query);
+        if (mock.hasGenerator()) {
+            entities = filterEntities(query, entities);
+        }
         result.setEntities(entities);
         if (!mock.getRows().isEmpty()) {
             result.setRows(mock.copyRows(query.getId() != null ? query.getId() : "mock"));
+        } else if (mock.hasGenerator()) {
+            for (int i = 0; i < entities.size(); i++) {
+                GraphEntity entity = entities.get(i);
+                QueryResult.ResultRow row = new QueryResult.ResultRow();
+                row.setRowId(query.getId() != null ? query.getId() + "#" + i : "mock#" + i);
+                if (entity.getVariableName() != null && !entity.getVariableName().isEmpty()) {
+                    row.put(entity.getVariableName(), entity);
+                }
+                if (!row.getEntitiesByVariable().isEmpty()) {
+                    result.addRow(row);
+                }
+            }
         } else {
             QueryResult.ResultRow row = new QueryResult.ResultRow();
             row.setRowId(query.getId() != null ? query.getId() + "#0" : "mock#0");
@@ -99,6 +114,51 @@ public class MockExternalAdapter implements DataSourceAdapter {
         }
         
         return result;
+    }
+
+    private List<GraphEntity> filterEntities(ExternalQuery query, List<GraphEntity> entities) {
+        if (query == null || query.getFilters() == null || query.getFilters().isEmpty() || entities == null) {
+            return entities;
+        }
+
+        List<GraphEntity> filtered = new ArrayList<>();
+        for (GraphEntity entity : entities) {
+            if (entity == null) {
+                continue;
+            }
+
+            boolean matches = true;
+            for (Map.Entry<String, Object> filter : query.getFilters().entrySet()) {
+                String key = filter.getKey();
+                Object expected = filter.getValue();
+                if (expected == null) {
+                    continue;
+                }
+
+                if ("_label".equals(key)) {
+                    if (!expected.equals(entity.getLabel())) {
+                        matches = false;
+                        break;
+                    }
+                    continue;
+                }
+
+                Object actual = entity.getProperties() != null ? entity.getProperties().get(key) : null;
+                if (actual == null && "name".equals(key) && entity.getProperties() != null) {
+                    actual = entity.getProperties().get("MENAME");
+                }
+                if (actual == null || !expected.equals(actual)) {
+                    matches = false;
+                    break;
+                }
+            }
+
+            if (matches) {
+                filtered.add(entity);
+            }
+        }
+
+        return filtered;
     }
     
     @Override
@@ -174,6 +234,10 @@ public class MockExternalAdapter implements DataSourceAdapter {
 
         public List<QueryResult.ResultRow> getRows() {
             return rows;
+        }
+
+        public boolean hasGenerator() {
+            return generator != null;
         }
 
         public List<QueryResult.ResultRow> copyRows(String idPrefix) {

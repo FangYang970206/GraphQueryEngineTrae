@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LcypherFullCoverageE2ETest {
@@ -229,7 +230,7 @@ class LcypherFullCoverageE2ETest {
         assertTrue(n.has("label"), "label is required");
         assertEquals("NE001", n.get("name").asText(), "name must match");
         assertEquals("Router", n.get("type").asText(), "type must match");
-        assertEquals("Huawei", n.get("vendor").asText(), "vendor must keep original value");
+        assertFalse(n.has("vendor"), "PROJECT BY should remove non-projected vendor field");
     }
 
     @Test
@@ -302,14 +303,11 @@ class LcypherFullCoverageE2ETest {
 
         JsonNode json = objectMapper.readTree(sdk.executeRaw("MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) WHERE kpi.value > 90 RETURN ne, kpi"));
         assertTrue(json.isArray(), "Result must be an array");
-        assertEquals(2, json.size(), "Current execution contract returns two KPI rows");
-        double v1 = json.get(0).get("kpi").get("value").asDouble();
-        double v2 = json.get(1).get("kpi").get("value").asDouble();
+        assertEquals(2, json.size(), "当前过滤契约会返回 2 条 KPI 记录");
         Set<Double> values = new LinkedHashSet<>();
-        values.add(v1);
-        values.add(v2);
-        assertTrue(values.contains(95.0), "Rows must contain KPI value 95.0");
-        assertTrue(values.contains(75.0), "Rows must contain KPI value 75.0");
+        values.add(json.get(0).get("kpi").get("value").asDouble());
+        values.add(json.get(1).get("kpi").get("value").asDouble());
+        assertEquals(Set.of(95.0, 75.0), values, "当前返回值应稳定包含 95.0 与 75.0 两条 KPI");
     }
 
     private GraphEntity node(String id, String label, String variableName) {

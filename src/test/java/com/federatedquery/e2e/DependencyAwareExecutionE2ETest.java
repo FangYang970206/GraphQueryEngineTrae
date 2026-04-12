@@ -65,6 +65,8 @@ class DependencyAwareExecutionE2ETest {
         ltpHasKpi2.setEdgeType("LTPHasKPI2");
         ltpHasKpi2.setTargetDataSource("kpi-service");
         ltpHasKpi2.setOperatorName("getKPI2ByLtpIds");
+        ltpHasKpi2.setTargetLabel("KPI");
+        ltpHasKpi2.getIdMapping().put("_id", "parentResId");
         ltpHasKpi2.setLastHopOnly(true);
         registry.registerVirtualEdge(ltpHasKpi2);
 
@@ -100,32 +102,38 @@ class DependencyAwareExecutionE2ETest {
             GraphEntity ltp2 = createLTPEntity("ltp2", "LTP002", "Port");
             ltp2.setVariableName("ltp");
 
+            GraphEntity neRow1 = createNEEntity("ne1", "NE001", "Router");
+            neRow1.setVariableName("ne");
+            GraphEntity neRow2 = createNEEntity("ne1", "NE001", "Router");
+            neRow2.setVariableName("ne");
+
             tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                    .addEntity(ne)
-                    .addEntity(ltp1)
-                    .addEntity(ltp2));
+                    .addRowEntities(neRow1, ltp1)
+                    .addRowEntities(neRow2, ltp2));
 
             GraphEntity kpi1 = createKPIEntity("kpi1", "cpu_usage", 85.5);
             kpi1.setVariableName("target");
+            kpi1.setProperty("parentResId", "ltp1");
             GraphEntity kpi2 = createKPIEntity("kpi2", "memory_usage", 70.0);
             kpi2.setVariableName("target");
+            kpi2.setProperty("parentResId", "ltp2");
 
             kpiAdapter.registerResponse("getKPI2ByLtpIds", MockExternalAdapter.MockResponse.create()
-                    .addEntity(kpi1)
-                    .addEntity(kpi2));
+                    .addRowEntities(kpi1)
+                    .addRowEntities(kpi2));
 
             String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN p";
 
             JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
-            assertTrue(json.size() >= 1, "Result should have at least 1 row");
+            assertEquals(1, json.size(), "Result should contain exactly 1 row");
 
             JsonNode firstRow = json.get(0);
-            assertTrue(firstRow.has("paths"), "Row must have 'paths' field");
+            assertTrue(firstRow.has("p"), "Row must have 'p' field");
 
-            JsonNode paths = firstRow.get("paths");
+            JsonNode paths = firstRow.get("p");
             assertTrue(paths.isArray(), "paths must be an array");
-            assertTrue(paths.size() >= 1, "Should have at least 1 path");
+            assertEquals(2, paths.size(), "Should reconstruct exactly 2 paths");
 
             JsonNode firstPath = paths.get(0);
             assertTrue(firstPath.isArray(), "Each path must be an array");
@@ -157,29 +165,38 @@ class DependencyAwareExecutionE2ETest {
             GraphEntity ltp3 = createLTPEntity("ltp-id-003", "LTP003", "Port");
             ltp3.setVariableName("ltp");
 
+            GraphEntity neRow1 = createNEEntity("ne1", "NE001", "Router");
+            neRow1.setVariableName("ne");
+            GraphEntity neRow2 = createNEEntity("ne1", "NE001", "Router");
+            neRow2.setVariableName("ne");
+            GraphEntity neRow3 = createNEEntity("ne1", "NE001", "Router");
+            neRow3.setVariableName("ne");
+
             tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                    .addEntity(ne)
-                    .addEntity(ltp1)
-                    .addEntity(ltp2)
-                    .addEntity(ltp3));
+                    .addRowEntities(neRow1, ltp1)
+                    .addRowEntities(neRow2, ltp2)
+                    .addRowEntities(neRow3, ltp3));
 
             GraphEntity kpi1 = createKPIEntity("kpi1", "cpu_usage", 85.5);
             kpi1.setVariableName("target");
+            kpi1.setProperty("parentResId", "ltp-id-001");
             GraphEntity kpi2 = createKPIEntity("kpi2", "memory_usage", 70.0);
             kpi2.setVariableName("target");
+            kpi2.setProperty("parentResId", "ltp-id-002");
             GraphEntity kpi3 = createKPIEntity("kpi3", "disk_usage", 60.0);
             kpi3.setVariableName("target");
+            kpi3.setProperty("parentResId", "ltp-id-003");
 
             kpiAdapter.registerResponse("getKPI2ByLtpIds", MockExternalAdapter.MockResponse.create()
-                    .addEntity(kpi1)
-                    .addEntity(kpi2)
-                    .addEntity(kpi3));
+                    .addRowEntities(kpi1)
+                    .addRowEntities(kpi2)
+                    .addRowEntities(kpi3));
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN ne, ltp, target";
 
             JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
-            assertTrue(json.size() >= 1, "Result should have at least 1 row");
+            assertEquals(3, json.size(), "Result should have exactly 3 rows");
 
             Set<String> ltpIds = new HashSet<>();
             Set<String> targetIds = new HashSet<>();
@@ -192,8 +209,8 @@ class DependencyAwareExecutionE2ETest {
                 }
             }
 
-            assertTrue(ltpIds.size() >= 1, "Should have at least 1 unique LTP ID");
-            assertTrue(targetIds.size() >= 1, "Should have at least 1 unique target ID");
+            assertEquals(Set.of("ltp-id-001", "ltp-id-002", "ltp-id-003"), ltpIds, "All LTP IDs must be preserved");
+            assertEquals(Set.of("kpi1", "kpi2", "kpi3"), targetIds, "All KPI IDs must be preserved");
         }
 
         @Test
@@ -239,27 +256,33 @@ class DependencyAwareExecutionE2ETest {
             GraphEntity element = createElementEntity("elem1", "Element001", "Module");
             element.setVariableName("target");
 
+            GraphEntity neRow = createNEEntity("ne1", "NE001", "Router");
+            neRow.setVariableName("ne");
+            GraphEntity ltpRow = createLTPEntity("ltp1", "LTP001", "Port");
+            ltpRow.setVariableName("ltp");
+            GraphEntity elementRow = createElementEntity("elem1", "Element001", "Module");
+            elementRow.setVariableName("target");
+
             tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                    .addEntity(ne)
-                    .addEntity(ltp)
-                    .addEntity(element));
+                    .addRowEntities(neRow, ltpRow, elementRow));
 
             GraphEntity kpi = createKPIEntity("kpi1", "cpu_usage", 85.5);
             kpi.setVariableName("target");
+            kpi.setProperty("parentResId", "ltp1");
 
             kpiAdapter.registerResponse("getKPI2ByLtpIds", MockExternalAdapter.MockResponse.create()
-                    .addEntity(kpi));
+                    .addRowEntities(kpi));
 
             String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2|LTPHasElement]->(target) RETURN p";
 
             JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
-            assertTrue(json.size() >= 1, "Result should have at least 1 row");
+            assertEquals(1, json.size(), "Result should contain exactly 1 row");
 
             Set<String> targetLabels = new HashSet<>();
             for (JsonNode row : json) {
-                if (row.has("paths")) {
-                    JsonNode paths = row.get("paths");
+                if (row.has("p")) {
+                    JsonNode paths = row.get("p");
                     for (JsonNode path : paths) {
                         if (path.isArray() && path.size() >= 5) {
                             JsonNode targetNode = path.get(4);
@@ -271,7 +294,7 @@ class DependencyAwareExecutionE2ETest {
                 }
             }
 
-            assertTrue(targetLabels.size() >= 1, "Should have at least 1 type of target");
+            assertEquals(Set.of("Element", "KPI"), targetLabels, "Should contain both Element and KPI targets");
         }
 
         @Test
@@ -286,29 +309,36 @@ class DependencyAwareExecutionE2ETest {
             GraphEntity element = createElementEntity("elem1", "Element001", "Module");
             element.setVariableName("target");
 
+            GraphEntity neRow = createNEEntity("ne1", "NE001", "Router");
+            neRow.setVariableName("ne");
+            GraphEntity ltpRow = createLTPEntity("ltp1", "LTP001", "Port");
+            ltpRow.setVariableName("ltp");
+            GraphEntity elementRow = createElementEntity("elem1", "Element001", "Module");
+            elementRow.setVariableName("target");
+
             tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                    .addEntity(ne)
-                    .addEntity(ltp)
-                    .addEntity(element));
+                    .addRowEntities(neRow, ltpRow, elementRow));
 
             GraphEntity kpi = createKPIEntity("kpi1", "cpu_usage", 85.5);
             kpi.setVariableName("target");
+            kpi.setProperty("parentResId", "ltp1");
 
             kpiAdapter.registerResponse("getKPI2ByLtpIds", MockExternalAdapter.MockResponse.create()
-                    .addEntity(kpi));
+                    .addRowEntities(kpi));
 
             String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2|LTPHasElement]->(target) RETURN p";
 
             JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
-            assertTrue(json.size() >= 1, "Result should have at least 1 row");
+            assertEquals(1, json.size(), "Result must contain exactly 1 row");
 
             for (JsonNode row : json) {
-                if (row.has("paths")) {
-                    JsonNode paths = row.get("paths");
+                if (row.has("p")) {
+                    JsonNode paths = row.get("p");
+                    assertEquals(2, paths.size(), "Should reconstruct exactly 2 paths");
                     for (JsonNode path : paths) {
                         assertTrue(path.isArray(), "Each path must be an array");
-                        assertTrue(path.size() >= 5, "Path should have at least 5 elements (3 nodes + 2 edges)");
+                        assertEquals(5, path.size(), "Path should have exactly 5 elements (3 nodes + 2 edges)");
                         
                         JsonNode firstNode = path.get(0);
                         assertEquals("node", firstNode.get("type").asText(), "First element must be a node");
@@ -330,21 +360,28 @@ class DependencyAwareExecutionE2ETest {
             GraphEntity element = createElementEntity("elem1", "Element001", "Module");
             element.setVariableName("target");
 
+            GraphEntity neRow = createNEEntity("ne1", "NE001", "Router");
+            neRow.setVariableName("ne");
+            GraphEntity ltpRow = createLTPEntity("ltp1", "LTP001", "Port");
+            ltpRow.setVariableName("ltp");
+            GraphEntity elementRow = createElementEntity("elem1", "Element001", "Module");
+            elementRow.setVariableName("target");
+
             tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
-                    .addEntity(ne)
-                    .addEntity(ltp)
-                    .addEntity(element));
+                    .addRowEntities(neRow, ltpRow, elementRow));
 
             GraphEntity kpi = createKPIEntity("kpi1", "cpu_usage", 85.5);
             kpi.setVariableName("target");
+            kpi.setProperty("parentResId", "ltp1");
 
             kpiAdapter.registerResponse("getKPI2ByLtpIds", MockExternalAdapter.MockResponse.create()
-                    .addEntity(kpi));
+                    .addRowEntities(kpi));
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2|LTPHasElement]->(target) RETURN ne, ltp, target";
 
             JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
+            assertEquals(2, json.size(), "Should return exactly 2 rows");
 
             for (JsonNode row : json) {
                 assertTrue(row.has("ne"), "Row must have 'ne' field");

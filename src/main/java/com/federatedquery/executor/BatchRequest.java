@@ -5,6 +5,8 @@ import lombok.Data;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
 
 @Data
 public class BatchRequest {
@@ -16,5 +18,6 @@ public class BatchRequest {
     private String outputIdField;
     private List<String> outputFields = new ArrayList<>();
     private List<String> outputVariables = new ArrayList<>();
+    private Map<String, Object> filters = new LinkedHashMap<>();
     private List<ExternalQuery> originalQueries = new ArrayList<>();
 }

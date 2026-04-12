@@ -13,7 +13,7 @@ public class BatchingStrategy {
         Map<String, List<ExternalQuery>> grouped = new HashMap<>();
         
         for (ExternalQuery q : queries) {
-            String key = q.getDataSource() + ":" + q.getOperator();
+            String key = q.getDataSource() + ":" + q.getOperator() + ":" + buildFilterKey(q.getFilters());
             grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(q);
         }
         
@@ -31,6 +31,7 @@ public class BatchingStrategy {
             String outputIdField = null;
             List<String> outputFields = new ArrayList<>();
             List<String> outputVariables = new ArrayList<>();
+            Map<String, Object> filters = new LinkedHashMap<>();
             
             for (ExternalQuery q : groupQueries) {
                 allInputIds.addAll(q.getInputIds());
@@ -42,6 +43,9 @@ public class BatchingStrategy {
                 }
                 outputFields.addAll(q.getOutputFields());
                 outputVariables.addAll(q.getOutputVariables());
+                if (filters.isEmpty() && q.getFilters() != null && !q.getFilters().isEmpty()) {
+                    filters.putAll(q.getFilters());
+                }
             }
             
             outputFields = new ArrayList<>(new LinkedHashSet<>(outputFields));
@@ -58,6 +62,7 @@ public class BatchingStrategy {
                 batch.setOutputIdField(outputIdField);
                 batch.setOutputFields(new ArrayList<>(outputFields));
                 batch.setOutputVariables(new ArrayList<>(outputVariables));
+                batch.setFilters(new LinkedHashMap<>(filters));
                 batch.setOriginalQueries(groupQueries);
                 batches.add(batch);
             } else {
@@ -74,6 +79,7 @@ public class BatchingStrategy {
                     batch.setOutputIdField(outputIdField);
                     batch.setOutputFields(new ArrayList<>(outputFields));
                     batch.setOutputVariables(new ArrayList<>(outputVariables));
+                    batch.setFilters(new LinkedHashMap<>(filters));
                     batch.setOriginalQueries(groupQueries);
                     
                     batches.add(batch);
@@ -82,6 +88,15 @@ public class BatchingStrategy {
         }
         
         return batches;
+    }
+
+    private String buildFilterKey(Map<String, Object> filters) {
+        if (filters == null || filters.isEmpty()) {
+            return "";
+        }
+        List<String> segments = new ArrayList<>();
+        new TreeMap<>(filters).forEach((key, value) -> segments.add(key + "=" + String.valueOf(value)));
+        return String.join("|", segments);
     }
     
     public List<QueryResult> unbatch(BatchRequest batch, QueryResult batchResult) {
