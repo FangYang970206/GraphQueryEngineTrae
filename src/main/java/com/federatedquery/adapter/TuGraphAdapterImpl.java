@@ -47,15 +47,13 @@ public class TuGraphAdapterImpl implements DataSourceAdapter {
             
             log.info("Query returned {} records", records != null ? records.size() : 0);
             
-            List<GraphEntity> entities = convertRecordsToEntities(records, query);
+            QueryResult result = convertRecordsToResult(records, query);
             
-            log.info("Converted to {} entities", entities.size());
-            
-            QueryResult result = QueryResult.success(entities);
+            log.info("Converted to {} entities", result.getEntities().size());
             result.setExecutionTimeMs(System.currentTimeMillis() - startTime);
             result.setDataSource(dataSourceName);
             
-            log.debug("TuGraph query returned {} entities in {}ms", entities.size(), result.getExecutionTimeMs());
+            log.debug("TuGraph query returned {} entities in {}ms", result.getEntities().size(), result.getExecutionTimeMs());
             
             return result;
             
@@ -161,20 +159,19 @@ public class TuGraphAdapterImpl implements DataSourceAdapter {
         return cypher.toString();
     }
     
-    private List<GraphEntity> convertRecordsToEntities(List<Record> records, ExternalQuery query) {
-        List<GraphEntity> entities = new ArrayList<>();
-        
+    private QueryResult convertRecordsToResult(List<Record> records, ExternalQuery query) {
+        QueryResult result = new QueryResult();
         if (records == null || records.isEmpty()) {
             log.info("Records is null or empty");
-            return entities;
+            return result;
         }
         
         log.info("Processing {} records", records.size());
         
         List<String> outputFields = query.getOutputFields();
-        List<String> outputVariables = query.getOutputVariables();
         
-        for (Record record : records) {
+        for (int recordIndex = 0; recordIndex < records.size(); recordIndex++) {
+            Record record = records.get(recordIndex);
             List<String> keys = new ArrayList<>(record.keys());
             
             log.info("Record keys: {}, size: {}", keys, keys.size());
@@ -185,6 +182,8 @@ public class TuGraphAdapterImpl implements DataSourceAdapter {
             }
             
             log.info("Record keys: {}", keys);
+            QueryResult.ResultRow row = new QueryResult.ResultRow();
+            row.setRowId(query.getId() + "#" + recordIndex);
             
             for (int i = 0; i < keys.size(); i++) {
                 String key = keys.get(i);
@@ -211,13 +210,18 @@ public class TuGraphAdapterImpl implements DataSourceAdapter {
                 if (node != null) {
                     GraphEntity entity = convertNodeToEntity(node, key, outputFields);
                     if (entity != null) {
-                        entities.add(entity);
+                        result.addEntity(entity);
+                        row.put(key, entity);
                     }
                 }
             }
+            
+            if (!row.getEntitiesByVariable().isEmpty()) {
+                result.addRow(row);
+            }
         }
         
-        return entities;
+        return result;
     }
     
     private GraphEntity convertNodeToEntity(org.neo4j.driver.types.Node node, String variableName, List<String> outputFields) {

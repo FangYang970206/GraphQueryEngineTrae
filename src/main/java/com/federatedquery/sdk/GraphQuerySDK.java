@@ -542,51 +542,7 @@ public class GraphQuerySDK {
         List<Map<String, Object>> results = new ArrayList<>();
         
         List<ReturnInfo> returnInfos = getReturnInfos(ast);
-        
-        Map<String, List<GraphEntity>> entitiesByVarName = new LinkedHashMap<>();
-        
-        for (List<QueryResult> qrList : execResult.getPhysicalResults().values()) {
-            for (QueryResult qr : qrList) {
-                for (GraphEntity entity : qr.getEntities()) {
-                    String varName = entity.getVariableName();
-                    if (varName != null && !varName.isEmpty()) {
-                        entitiesByVarName.computeIfAbsent(varName, k -> new ArrayList<>()).add(entity);
-                    } else if (entity.getId() != null) {
-                        entitiesByVarName.computeIfAbsent(entity.getId(), k -> new ArrayList<>()).add(entity);
-                    }
-                }
-            }
-        }
-        for (QueryResult qr : execResult.getExternalResults()) {
-            for (GraphEntity entity : qr.getEntities()) {
-                String varName = entity.getVariableName();
-                if (varName != null && !varName.isEmpty()) {
-                    entitiesByVarName.computeIfAbsent(varName, k -> new ArrayList<>()).add(entity);
-                } else if (entity.getId() != null) {
-                    entitiesByVarName.computeIfAbsent(entity.getId(), k -> new ArrayList<>()).add(entity);
-                }
-            }
-        }
-        for (QueryResult qr : execResult.getBatchResults().values()) {
-            for (GraphEntity entity : qr.getEntities()) {
-                String varName = entity.getVariableName();
-                if (varName != null && !varName.isEmpty()) {
-                    entitiesByVarName.computeIfAbsent(varName, k -> new ArrayList<>()).add(entity);
-                } else if (entity.getId() != null) {
-                    entitiesByVarName.computeIfAbsent(entity.getId(), k -> new ArrayList<>()).add(entity);
-                }
-            }
-        }
-        for (QueryResult qr : execResult.getUnionResults().values()) {
-            for (GraphEntity entity : qr.getEntities()) {
-                String varName = entity.getVariableName();
-                if (varName != null && !varName.isEmpty()) {
-                    entitiesByVarName.computeIfAbsent(varName, k -> new ArrayList<>()).add(entity);
-                } else if (entity.getId() != null) {
-                    entitiesByVarName.computeIfAbsent(entity.getId(), k -> new ArrayList<>()).add(entity);
-                }
-            }
-        }
+        Map<String, List<GraphEntity>> entitiesByVarName = collectEntitiesByVarName(execResult, true, true);
         if (returnInfos.isEmpty()) {
             for (List<GraphEntity> entities : entitiesByVarName.values()) {
                 for (GraphEntity entity : entities) {
@@ -604,8 +560,11 @@ public class GraphQuerySDK {
         
         for (ReturnInfo info : returnInfos) {
             if (info.isPath) {
-                log.debug("Building path results for variable: {}, entitiesByVarName: {}", info.variableName, entitiesByVarName.keySet());
-                List<Map<String, Object>> pathResults = buildPathResults(info.variableName, entitiesByVarName, ast);
+                List<Map<String, Object>> pathResults = buildStructuredPathResults(info.variableName, ast, execResult);
+                if (pathResults.isEmpty()) {
+                    log.debug("Building path results for variable: {}, entitiesByVarName: {}", info.variableName, entitiesByVarName.keySet());
+                    pathResults = buildPathResults(info.variableName, entitiesByVarName, ast);
+                }
                 results.addAll(pathResults);
             }
         }
@@ -652,43 +611,135 @@ public class GraphQuerySDK {
         
         return results;
     }
+
+    private Map<String, List<GraphEntity>> collectEntitiesByVarName(
+            ExecutionResult execResult,
+            boolean includeBatchResults,
+            boolean includeUnionResults) {
+        Map<String, List<GraphEntity>> entitiesByVarName = new LinkedHashMap<>();
+        
+        for (List<QueryResult> qrList : execResult.getPhysicalResults().values()) {
+            for (QueryResult qr : qrList) {
+                addEntitiesToVarMap(entitiesByVarName, qr.getEntities());
+            }
+        }
+        for (QueryResult qr : execResult.getExternalResults()) {
+            addEntitiesToVarMap(entitiesByVarName, qr.getEntities());
+        }
+        if (includeBatchResults) {
+            for (QueryResult qr : execResult.getBatchResults().values()) {
+                addEntitiesToVarMap(entitiesByVarName, qr.getEntities());
+            }
+        }
+        if (includeUnionResults) {
+            for (QueryResult qr : execResult.getUnionResults().values()) {
+                addEntitiesToVarMap(entitiesByVarName, qr.getEntities());
+            }
+        }
+        
+        return entitiesByVarName;
+    }
+
+    private void addEntitiesToVarMap(Map<String, List<GraphEntity>> entitiesByVarName, List<GraphEntity> entities) {
+        for (GraphEntity entity : entities) {
+            String varName = entity.getVariableName();
+            if (varName != null && !varName.isEmpty()) {
+                entitiesByVarName.computeIfAbsent(varName, k -> new ArrayList<>()).add(entity);
+            } else if (entity.getId() != null) {
+                entitiesByVarName.computeIfAbsent(entity.getId(), k -> new ArrayList<>()).add(entity);
+            }
+        }
+    }
     
     private List<PathInfo> extractPathInfo(Program ast, String pathVarName) {
         List<PathInfo> pathInfos = new ArrayList<>();
         
         if (ast.getStatement() != null && ast.getStatement().getQuery() != null) {
             for (Statement.SingleQuery sq : ast.getStatement().getQuery().getSingleQueries()) {
-                for (MatchClause match : sq.getMatchClauses()) {
-                    Pattern pattern = match.getPattern();
-                    if (pattern != null) {
-                        for (Pattern.PatternPart part : pattern.getPatternParts()) {
-                            if (pathVarName.equals(part.getVariable())) {
-                                PathInfo info = new PathInfo();
-                                info.pathVariable = pathVarName;
-                                info.patternElement = part.getPatternElement();
-                                pathInfos.add(info);
-                            }
-                        }
-                    }
-                }
+                pathInfos.addAll(extractPathInfo(sq, pathVarName));
             }
         }
         
         return pathInfos;
     }
-    
-    private List<Map<String, Object>> buildPathResults(String pathVarName, Map<String, List<GraphEntity>> entitiesByVarName, Program ast) {
-        List<Map<String, Object>> results = new ArrayList<>();
-        Map<String, List<GraphEntity>> normalizedEntitiesByVarName = deduplicateEntitiesByVarName(entitiesByVarName);
+
+    private List<PathInfo> extractPathInfo(Statement.SingleQuery singleQuery, String pathVarName) {
+        List<PathInfo> pathInfos = new ArrayList<>();
+        for (MatchClause match : singleQuery.getMatchClauses()) {
+            Pattern pattern = match.getPattern();
+            if (pattern != null) {
+                for (Pattern.PatternPart part : pattern.getPatternParts()) {
+                    if (pathVarName.equals(part.getVariable())) {
+                        PathInfo info = new PathInfo();
+                        info.pathVariable = pathVarName;
+                        info.patternElement = part.getPatternElement();
+                        pathInfos.add(info);
+                    }
+                }
+            }
+        }
+        return pathInfos;
+    }
+
+    private List<Map<String, Object>> buildStructuredPathResults(String pathVarName, Program ast, ExecutionResult execResult) {
+        if (ast == null || ast.getStatement() == null || ast.getStatement().getQuery() == null) {
+            return new ArrayList<>();
+        }
         
-        List<PathInfo> pathInfos = extractPathInfo(ast, pathVarName);
-        
-        if (pathInfos.isEmpty()) {
-            return results;
+        if (ast.getStatement().getQuery().getUnions().isEmpty() || execResult.getUnionResults().isEmpty()) {
+            return new ArrayList<>();
         }
         
         List<List<Map<String, Object>>> allPaths = new ArrayList<>();
+        List<Statement.SingleQuery> singleQueries = ast.getStatement().getQuery().getSingleQueries();
         
+        for (QueryResult unionResult : execResult.getUnionResults().values()) {
+            List<ExecutionResult> subResults = extractUnionSubResults(unionResult);
+            if (subResults.isEmpty()) {
+                continue;
+            }
+            
+            int bound = Math.min(singleQueries.size(), subResults.size());
+            for (int i = 0; i < bound; i++) {
+                List<PathInfo> pathInfos = extractPathInfo(singleQueries.get(i), pathVarName);
+                if (pathInfos.isEmpty()) {
+                    continue;
+                }
+                Map<String, List<GraphEntity>> branchEntitiesByVarName = collectEntitiesByVarName(subResults.get(i), false, false);
+                allPaths.addAll(buildPaths(pathInfos, branchEntitiesByVarName));
+            }
+        }
+        
+        return wrapPaths(pathVarName, allPaths);
+    }
+
+    private List<ExecutionResult> extractUnionSubResults(QueryResult unionResult) {
+        if (!(unionResult.getData() instanceof List<?> dataList)) {
+            return new ArrayList<>();
+        }
+        
+        List<ExecutionResult> subResults = new ArrayList<>();
+        for (Object item : dataList) {
+            if (item instanceof ExecutionResult executionResult) {
+                subResults.add(executionResult);
+            }
+        }
+        return subResults;
+    }
+    
+    private List<Map<String, Object>> buildPathResults(String pathVarName, Map<String, List<GraphEntity>> entitiesByVarName, Program ast) {
+        List<PathInfo> pathInfos = extractPathInfo(ast, pathVarName);
+        List<List<Map<String, Object>>> allPaths = buildPaths(pathInfos, entitiesByVarName);
+        return wrapPaths(pathVarName, allPaths);
+    }
+
+    private List<List<Map<String, Object>>> buildPaths(List<PathInfo> pathInfos, Map<String, List<GraphEntity>> entitiesByVarName) {
+        List<List<Map<String, Object>>> allPaths = new ArrayList<>();
+        if (pathInfos.isEmpty()) {
+            return allPaths;
+        }
+
+        Map<String, List<GraphEntity>> normalizedEntitiesByVarName = deduplicateEntitiesByVarName(entitiesByVarName);
         for (PathInfo pathInfo : pathInfos) {
             if (pathInfo.patternElement == null) {
                 continue;
@@ -712,14 +763,17 @@ public class GraphQuerySDK {
                 buildPathVariantsRecursive(pathInfo.patternElement.getChains(), 0, basePath, normalizedEntitiesByVarName, allPaths);
             }
         }
-        
+        return allPaths;
+    }
+
+    private List<Map<String, Object>> wrapPaths(String pathVarName, List<List<Map<String, Object>>> allPaths) {
+        List<Map<String, Object>> results = new ArrayList<>();
         if (!allPaths.isEmpty()) {
             List<List<Map<String, Object>>> deduplicatedPaths = new ArrayList<>(new LinkedHashSet<>(allPaths));
             Map<String, Object> row = new LinkedHashMap<>();
             row.put(pathVarName, deduplicatedPaths);
             results.add(row);
         }
-        
         return results;
     }
 

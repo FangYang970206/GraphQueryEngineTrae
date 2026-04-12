@@ -77,6 +77,16 @@ public class MockExternalAdapter implements DataSourceAdapter {
         
         List<GraphEntity> entities = mock.execute(query);
         result.setEntities(entities);
+        QueryResult.ResultRow row = new QueryResult.ResultRow();
+        row.setRowId(query.getId() != null ? query.getId() + "#0" : "mock#0");
+        for (GraphEntity entity : entities) {
+            if (entity.getVariableName() != null && !entity.getVariableName().isEmpty()) {
+                row.put(entity.getVariableName(), entity);
+            }
+        }
+        if (!row.getEntitiesByVariable().isEmpty()) {
+            result.addRow(row);
+        }
         result.setSuccess(true);
         result.setExecutionTimeMs(System.currentTimeMillis() - startTime);
         

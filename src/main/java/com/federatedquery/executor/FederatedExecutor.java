@@ -460,10 +460,12 @@ public class FederatedExecutor {
                 .thenApply(v -> {
                     QueryResult combined = new QueryResult();
                     combined.setSuccess(true);
+                    List<ExecutionResult> subResults = new ArrayList<>();
                     
                     for (CompletableFuture<ExecutionResult> future : subFutures) {
                         try {
                             ExecutionResult subResult = future.get();
+                            subResults.add(subResult);
                             for (List<QueryResult> results : subResult.getPhysicalResults().values()) {
                                 for (QueryResult r : results) {
                                     combined.getEntities().addAll(r.getEntities());
@@ -479,6 +481,7 @@ public class FederatedExecutor {
                             log.error("Failed to get union sub-result", e);
                         }
                     }
+                    combined.setData(subResults);
                     
                     return combined;
                 });

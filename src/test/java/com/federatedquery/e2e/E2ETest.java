@@ -157,6 +157,7 @@ class E2ETest {
         
         GraphEntity kpiEntity = createKPIEntity("kpi1", "cpu_usage", 85.5);
         kpiEntity.setVariableName("target");
+        kpiEntity.setProperty("parentResId", "ltp1");
         
         GraphEntity alarmEntity = createAlarmEntity("alarm1", "critical", "High CPU");
         alarmEntity.setVariableName("target");
@@ -214,6 +215,7 @@ class E2ETest {
         
         GraphEntity kpiEntity = createKPIEntity("kpi1", "cpu_usage", 85.5);
         kpiEntity.setVariableName("target");
+        kpiEntity.setProperty("parentResId", "ltp1");
         
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
                 .addEntity(neEntity)
@@ -238,11 +240,11 @@ class E2ETest {
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
         JsonNode firstRow = json.get(0);
-        assertTrue(firstRow.has("paths"), "每行必须有paths字段");
+        assertTrue(firstRow.has("p"), "每行必须有p字段");
         
-        JsonNode paths = firstRow.get("paths");
-        assertTrue(paths.isArray(), "paths必须是数组");
-        assertTrue(paths.size() > 0, "paths数组不能为空");
+        JsonNode paths = firstRow.get("p");
+        assertTrue(paths.isArray(), "p必须是数组");
+        assertEquals(1, paths.size(), "p数组应该有1条路径");
         
         JsonNode firstPath = paths.get(0);
         assertTrue(firstPath.isArray(), "每个path必须是数组");
@@ -309,11 +311,11 @@ class E2ETest {
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
         JsonNode firstRow = json.get(0);
-        assertTrue(firstRow.has("paths"), "每行必须有paths字段");
+        assertTrue(firstRow.has("path"), "每行必须有path字段");
         
-        JsonNode paths = firstRow.get("paths");
-        assertTrue(paths.isArray(), "paths必须是数组");
-        assertEquals(1, paths.size(), "paths数组应该有1条路径");
+        JsonNode paths = firstRow.get("path");
+        assertTrue(paths.isArray(), "path必须是数组");
+        assertEquals(1, paths.size(), "path数组应该有1条路径");
         
         JsonNode firstPath = paths.get(0);
         assertTrue(firstPath.isArray(), "每个path必须是数组");

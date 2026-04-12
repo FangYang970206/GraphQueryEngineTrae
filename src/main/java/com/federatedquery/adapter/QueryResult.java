@@ -12,6 +12,7 @@ public class QueryResult {
     private boolean success = true;
     private Object data;
     private List<GraphEntity> entities = new ArrayList<>();
+    private List<ResultRow> rows = new ArrayList<>();
     private String error;
     private Map<String, String> warnings = new HashMap<>();
     private long executionTimeMs;
@@ -19,6 +20,10 @@ public class QueryResult {
     
     public void addEntity(GraphEntity entity) {
         this.entities.add(entity);
+    }
+
+    public void addRow(ResultRow row) {
+        this.rows.add(row);
     }
     
     public void setError(String error) {
@@ -49,5 +54,17 @@ public class QueryResult {
         result.setSuccess(true);
         result.addWarning("PARTIAL_RESULT", warning);
         return result;
+    }
+
+    @Data
+    public static class ResultRow {
+        private String rowId;
+        private Map<String, GraphEntity> entitiesByVariable = new HashMap<>();
+
+        public void put(String variable, GraphEntity entity) {
+            if (variable != null && entity != null) {
+                entitiesByVariable.put(variable, entity);
+            }
+        }
     }
 }
