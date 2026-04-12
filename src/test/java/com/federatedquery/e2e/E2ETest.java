@@ -3,14 +3,8 @@ package com.federatedquery.e2e;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.federatedquery.adapter.*;
-import com.federatedquery.aggregator.*;
 import com.federatedquery.executor.FederatedExecutor;
 import com.federatedquery.metadata.*;
-import com.federatedquery.parser.CypherParserFacade;
-import com.federatedquery.parser.CypherASTVisitor;
-import com.federatedquery.rewriter.QueryRewriter;
-import com.federatedquery.rewriter.VirtualEdgeDetector;
-import com.federatedquery.reliability.WhereConditionPushdown;
 import com.federatedquery.sdk.GraphQuerySDK;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -18,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.*;
 
+import static com.federatedquery.e2e.E2EGraphEntityFactory.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class E2ETest {
@@ -32,124 +27,40 @@ class E2ETest {
     
     @BeforeEach
     void setUp() {
-        registry = new MetadataRegistryImpl();
-        
-        DataSourceMetadata tugraph = new DataSourceMetadata();
-        tugraph.setName("tugraph");
-        tugraph.setType(DataSourceType.TUGRAPH_BOLT);
-        tugraph.setEndpoint("bolt://localhost:7687");
-        registry.registerDataSource(tugraph);
-        
-        DataSourceMetadata kpiService = new DataSourceMetadata();
-        kpiService.setName("kpi-service");
-        kpiService.setType(DataSourceType.REST_API);
-        kpiService.setEndpoint("http://kpi-service:8080");
-        registry.registerDataSource(kpiService);
-        
-        DataSourceMetadata alarmService = new DataSourceMetadata();
-        alarmService.setName("alarm-service");
-        alarmService.setType(DataSourceType.REST_API);
-        alarmService.setEndpoint("http://alarm-service:8080");
-        registry.registerDataSource(alarmService);
-        
-        DataSourceMetadata cardService = new DataSourceMetadata();
-        cardService.setName("card-service");
-        cardService.setType(DataSourceType.REST_API);
-        cardService.setEndpoint("http://card-service:8080");
-        registry.registerDataSource(cardService);
-        
-        VirtualEdgeBinding neHasKpi = new VirtualEdgeBinding();
-        neHasKpi.setEdgeType("NEHasKPI");
-        neHasKpi.setTargetDataSource("kpi-service");
-        neHasKpi.setOperatorName("getKPIByNeIds");
-        neHasKpi.setTargetLabel("KPI");
-        neHasKpi.getIdMapping().put("_id", "parentResId");
-        neHasKpi.setLastHopOnly(true);
-        registry.registerVirtualEdge(neHasKpi);
-        
-        VirtualEdgeBinding neHasAlarms = new VirtualEdgeBinding();
-        neHasAlarms.setEdgeType("NEHasAlarms");
-        neHasAlarms.setTargetDataSource("alarm-service");
-        neHasAlarms.setOperatorName("getAlarmsByNeIds");
-        neHasAlarms.setTargetLabel("Alarm");
-        neHasAlarms.getIdMapping().put("_id", "parentResId");
-        neHasAlarms.setLastHopOnly(true);
-        registry.registerVirtualEdge(neHasAlarms);
-        
-        VirtualEdgeBinding ltpHasKpi2 = new VirtualEdgeBinding();
-        ltpHasKpi2.setEdgeType("LTPHasKPI2");
-        ltpHasKpi2.setTargetDataSource("kpi-service");
-        ltpHasKpi2.setOperatorName("getKPI2ByLtpIds");
-        ltpHasKpi2.setTargetLabel("KPI");
-        ltpHasKpi2.getIdMapping().put("_id", "parentResId");
-        ltpHasKpi2.setLastHopOnly(true);
-        registry.registerVirtualEdge(ltpHasKpi2);
-        
-        VirtualEdgeBinding bornIn = new VirtualEdgeBinding();
-        bornIn.setEdgeType("BORN_IN");
-        bornIn.setTargetDataSource("card-service");
-        bornIn.setOperatorName("getCardsByPersonIds");
-        bornIn.setLastHopOnly(true);
-        registry.registerVirtualEdge(bornIn);
-        
-        VirtualEdgeBinding cardLocateInNe = new VirtualEdgeBinding();
-        cardLocateInNe.setEdgeType("CardLocateInNe");
-        cardLocateInNe.setTargetDataSource("card-service");
-        cardLocateInNe.setOperatorName("getCardByCardId");
-        cardLocateInNe.setFirstHopOnly(true);
-        registry.registerVirtualEdge(cardLocateInNe);
-        
-        LabelMetadata neLabel = new LabelMetadata();
-        neLabel.setLabel("NetworkElement");
-        neLabel.setVirtual(false);
-        neLabel.setDataSource("tugraph");
-        registry.registerLabel(neLabel);
-        
-        LabelMetadata ltpLabel = new LabelMetadata();
-        ltpLabel.setLabel("LTP");
-        ltpLabel.setVirtual(false);
-        ltpLabel.setDataSource("tugraph");
-        registry.registerLabel(ltpLabel);
-        
-        LabelMetadata personLabel = new LabelMetadata();
-        personLabel.setLabel("Person");
-        personLabel.setVirtual(false);
-        personLabel.setDataSource("tugraph");
-        registry.registerLabel(personLabel);
-        
-        LabelMetadata cardLabel = new LabelMetadata();
-        cardLabel.setLabel("Card");
-        cardLabel.setVirtual(true);
-        cardLabel.setDataSource("card-service");
-        registry.registerLabel(cardLabel);
-        
-        kpiAdapter = new MockExternalAdapter();
-        kpiAdapter.setDataSourceName("kpi-service");
-        
-        alarmAdapter = new MockExternalAdapter();
-        alarmAdapter.setDataSourceName("alarm-service");
-        
-        cardAdapter = new MockExternalAdapter();
-        cardAdapter.setDataSourceName("card-service");
-        
-        tugraphAdapter = new MockExternalAdapter();
-        tugraphAdapter.setDataSourceName("tugraph");
-        
-        CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor());
-        VirtualEdgeDetector detector = new VirtualEdgeDetector(registry);
-        WhereConditionPushdown whereConditionPushdown = new WhereConditionPushdown(registry);
-        QueryRewriter rewriter = new QueryRewriter(registry, detector, whereConditionPushdown);
-        FederatedExecutor executor = new FederatedExecutor(registry);
-        executor.registerAdapter("kpi-service", kpiAdapter);
-        executor.registerAdapter("alarm-service", alarmAdapter);
-        executor.registerAdapter("card-service", cardAdapter);
-        executor.registerAdapter("tugraph", tugraphAdapter);
-        ResultStitcher stitcher = new ResultStitcher();
-        GlobalSorter sorter = new GlobalSorter();
-        UnionDeduplicator deduplicator = new UnionDeduplicator();
-        
-        sdk = new GraphQuerySDK(parser, rewriter, executor, stitcher, sorter, deduplicator);
-        objectMapper = new ObjectMapper();
+        FederatedE2ETestFixture fixture = new FederatedE2ETestFixture()
+                .registerDataSource("tugraph", DataSourceType.TUGRAPH_BOLT, "bolt://localhost:7687")
+                .registerDataSource("kpi-service", DataSourceType.REST_API, "http://kpi-service:8080")
+                .registerDataSource("alarm-service", DataSourceType.REST_API, "http://alarm-service:8080")
+                .registerDataSource("card-service", DataSourceType.REST_API, "http://card-service:8080")
+                .registerVirtualEdge("NEHasKPI", "kpi-service", "getKPIByNeIds", binding -> {
+                    binding.setTargetLabel("KPI");
+                    binding.getIdMapping().put("_id", "parentResId");
+                    binding.setLastHopOnly(true);
+                })
+                .registerVirtualEdge("NEHasAlarms", "alarm-service", "getAlarmsByNeIds", binding -> {
+                    binding.setTargetLabel("Alarm");
+                    binding.getIdMapping().put("_id", "parentResId");
+                    binding.setLastHopOnly(true);
+                })
+                .registerVirtualEdge("LTPHasKPI2", "kpi-service", "getKPI2ByLtpIds", binding -> {
+                    binding.setTargetLabel("KPI");
+                    binding.getIdMapping().put("_id", "parentResId");
+                    binding.setLastHopOnly(true);
+                })
+                .registerVirtualEdge("BORN_IN", "card-service", "getCardsByPersonIds", binding -> binding.setLastHopOnly(true))
+                .registerVirtualEdge("CardLocateInNe", "card-service", "getCardByCardId", binding -> binding.setFirstHopOnly(true))
+                .registerLabel("NetworkElement", false, "tugraph")
+                .registerLabel("LTP", false, "tugraph")
+                .registerLabel("Person", false, "tugraph")
+                .registerLabel("Card", true, "card-service");
+
+        registry = fixture.registry();
+        kpiAdapter = fixture.createAdapter("kpi-service");
+        alarmAdapter = fixture.createAdapter("alarm-service");
+        cardAdapter = fixture.createAdapter("card-service");
+        tugraphAdapter = fixture.createAdapter("tugraph");
+        sdk = fixture.createSdk();
+        objectMapper = fixture.objectMapper();
     }
     
     @Test
@@ -697,46 +608,6 @@ class E2ETest {
         }
     }
     
-    private GraphEntity createNEEntity(String id, String name, String type) {
-        GraphEntity entity = GraphEntity.node(id, "NetworkElement");
-        entity.setProperty("name", name);
-        entity.setProperty("type", type);
-        return entity;
-    }
-    
-    private GraphEntity createLTPEntity(String id, String name, String type) {
-        GraphEntity entity = GraphEntity.node(id, "LTP");
-        entity.setProperty("name", name);
-        entity.setProperty("type", type);
-        return entity;
-    }
-    
-    private GraphEntity createPersonEntity(String id, String name) {
-        GraphEntity entity = GraphEntity.node(id, "Person");
-        entity.setProperty("name", name);
-        return entity;
-    }
-    
-    private GraphEntity createCardEntity(String id, String label, String name) {
-        GraphEntity entity = GraphEntity.node(id, label);
-        entity.setProperty("name", name);
-        return entity;
-    }
-    
-    private GraphEntity createKPIEntity(String id, String name, double value) {
-        GraphEntity entity = GraphEntity.node(id, "KPI");
-        entity.setProperty("name", name);
-        entity.setProperty("value", value);
-        return entity;
-    }
-    
-    private GraphEntity createAlarmEntity(String id, String severity, String message) {
-        GraphEntity entity = GraphEntity.node(id, "Alarm");
-        entity.setProperty("severity", severity);
-        entity.setProperty("message", message);
-        return entity;
-    }
-
     private String buildPathSignature(JsonNode path) {
         assertTrue(path.isArray(), "路径必须是数组");
 

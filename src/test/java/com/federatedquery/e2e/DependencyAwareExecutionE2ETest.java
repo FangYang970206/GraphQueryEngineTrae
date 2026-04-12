@@ -3,14 +3,7 @@ package com.federatedquery.e2e;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.federatedquery.adapter.*;
-import com.federatedquery.aggregator.*;
-import com.federatedquery.executor.FederatedExecutor;
 import com.federatedquery.metadata.*;
-import com.federatedquery.parser.CypherParserFacade;
-import com.federatedquery.parser.CypherASTVisitor;
-import com.federatedquery.rewriter.QueryRewriter;
-import com.federatedquery.rewriter.VirtualEdgeDetector;
-import com.federatedquery.reliability.WhereConditionPushdown;
 import com.federatedquery.sdk.GraphQuerySDK;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.*;
 
+import static com.federatedquery.e2e.E2EGraphEntityFactory.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DependencyAwareExecutionE2ETest {
@@ -31,60 +25,23 @@ class DependencyAwareExecutionE2ETest {
 
     @BeforeEach
     void setUp() {
-        registry = new MetadataRegistryImpl();
+        FederatedE2ETestFixture fixture = new FederatedE2ETestFixture()
+                .registerDataSource("tugraph", DataSourceType.TUGRAPH_BOLT)
+                .registerDataSource("kpi-service", DataSourceType.REST_API)
+                .registerLabel("NetworkElement", false, "tugraph")
+                .registerLabel("LTP", false, "tugraph")
+                .registerLabel("KPI", true, "kpi-service")
+                .registerVirtualEdge("LTPHasKPI2", "kpi-service", "getKPI2ByLtpIds", binding -> {
+                    binding.setTargetLabel("KPI");
+                    binding.getIdMapping().put("_id", "parentResId");
+                    binding.setLastHopOnly(true);
+                });
 
-        DataSourceMetadata tugraph = new DataSourceMetadata();
-        tugraph.setName("tugraph");
-        tugraph.setType(DataSourceType.TUGRAPH_BOLT);
-        registry.registerDataSource(tugraph);
-
-        DataSourceMetadata kpiService = new DataSourceMetadata();
-        kpiService.setName("kpi-service");
-        kpiService.setType(DataSourceType.REST_API);
-        registry.registerDataSource(kpiService);
-
-        LabelMetadata neLabel = new LabelMetadata();
-        neLabel.setLabel("NetworkElement");
-        neLabel.setVirtual(false);
-        neLabel.setDataSource("tugraph");
-        registry.registerLabel(neLabel);
-
-        LabelMetadata ltpLabel = new LabelMetadata();
-        ltpLabel.setLabel("LTP");
-        ltpLabel.setVirtual(false);
-        ltpLabel.setDataSource("tugraph");
-        registry.registerLabel(ltpLabel);
-
-        LabelMetadata kpiLabel = new LabelMetadata();
-        kpiLabel.setLabel("KPI");
-        kpiLabel.setVirtual(true);
-        kpiLabel.setDataSource("kpi-service");
-        registry.registerLabel(kpiLabel);
-
-        VirtualEdgeBinding ltpHasKpi2 = new VirtualEdgeBinding();
-        ltpHasKpi2.setEdgeType("LTPHasKPI2");
-        ltpHasKpi2.setTargetDataSource("kpi-service");
-        ltpHasKpi2.setOperatorName("getKPI2ByLtpIds");
-        ltpHasKpi2.setTargetLabel("KPI");
-        ltpHasKpi2.getIdMapping().put("_id", "parentResId");
-        ltpHasKpi2.setLastHopOnly(true);
-        registry.registerVirtualEdge(ltpHasKpi2);
-
-        tugraphAdapter = new MockExternalAdapter();
-        tugraphAdapter.setDataSourceName("tugraph");
-        kpiAdapter = new MockExternalAdapter();
-        kpiAdapter.setDataSourceName("kpi-service");
-
-        CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor());
-        VirtualEdgeDetector detector = new VirtualEdgeDetector(registry);
-        WhereConditionPushdown whereConditionPushdown = new WhereConditionPushdown(registry);
-        QueryRewriter rewriter = new QueryRewriter(registry, detector, whereConditionPushdown);
-        FederatedExecutor executor = new FederatedExecutor(registry);
-        executor.registerAdapter("tugraph", tugraphAdapter);
-        executor.registerAdapter("kpi-service", kpiAdapter);
-
-        sdk = new GraphQuerySDK(parser, rewriter, executor, new ResultStitcher(), new GlobalSorter(), new UnionDeduplicator());
-        objectMapper = new ObjectMapper();
+        registry = fixture.registry();
+        tugraphAdapter = fixture.createAdapter("tugraph");
+        kpiAdapter = fixture.createAdapter("kpi-service");
+        sdk = fixture.createSdk();
+        objectMapper = fixture.objectMapper();
     }
 
     @Nested
@@ -478,38 +435,4 @@ class DependencyAwareExecutionE2ETest {
         }
     }
 
-    private GraphEntity createNEEntity(String id, String name, String type) {
-        GraphEntity entity = GraphEntity.node(id, "NetworkElement");
-        entity.setProperty("name", name);
-        entity.setProperty("type", type);
-        return entity;
-    }
-
-    private GraphEntity createLTPEntity(String id, String name, String type) {
-        GraphEntity entity = GraphEntity.node(id, "LTP");
-        entity.setProperty("name", name);
-        entity.setProperty("type", type);
-        return entity;
-    }
-
-    private GraphEntity createKPIEntity(String id, String name, double value) {
-        GraphEntity entity = GraphEntity.node(id, "KPI");
-        entity.setProperty("name", name);
-        entity.setProperty("value", value);
-        return entity;
-    }
-
-    private GraphEntity createElementEntity(String id, String name, String type) {
-        GraphEntity entity = GraphEntity.node(id, "Element");
-        entity.setProperty("name", name);
-        entity.setProperty("type", type);
-        return entity;
-    }
-
-    private GraphEntity createPortEntity(String id, String name, String interfaceName) {
-        GraphEntity entity = GraphEntity.node(id, "Port");
-        entity.setProperty("name", name);
-        entity.setProperty("interface", interfaceName);
-        return entity;
-    }
 }

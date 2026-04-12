@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
+import java.util.function.Consumer;
 
 @Component
 public class GraphQuerySDK {
@@ -44,14 +45,7 @@ public class GraphQuerySDK {
                         ResultStitcher stitcher,
                         GlobalSorter sorter,
                         UnionDeduplicator deduplicator) {
-        this.parser = parser;
-        this.rewriter = rewriter;
-        this.executor = executor;
-        this.stitcher = stitcher;
-        this.sorter = sorter;
-        this.deduplicator = deduplicator;
-        this.objectMapper = new ObjectMapper();
-        this.tugraphConnector = null;
+        this(parser, rewriter, executor, stitcher, sorter, deduplicator, null);
     }
     
     public GraphQuerySDK(CypherParserFacade parser,
@@ -74,29 +68,8 @@ public class GraphQuerySDK {
     public List<Map<String, Object>> executeRecords(String cypher) {
         try {
             Program ast = parser.parseCached(cypher);
-            
-            if (ast.getStatement() != null && ast.getStatement().isExplain()) {
-                throw new UnsupportedOperationException("EXPLAIN not supported in executeRecords mode");
-            }
-            
-            if (ast.getStatement() != null && ast.getStatement().isProfile()) {
-                throw new UnsupportedOperationException("PROFILE not supported in executeRecords mode");
-            }
-            
-            ExecutionPlan plan = rewriter.rewrite(ast);
-            
-            ExecutionResult execResult = executor.execute(plan).join();
-            
-            List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult);
-            
-            results = applyPendingFilters(results, plan.getGlobalContext().getPendingFilters());
-            
-            results = applyGlobalSortAndPagination(results, plan.getGlobalContext());
-            
-            results = applyDeduplication(results, ast);
-            
-            return RecordConverter.convertToRecordMaps(results);
-            
+            ensureExecuteRecordsMode(ast);
+            return RecordConverter.convertToRecordMaps(executeQuery(ast).results());
         } catch (Exception e) {
             log.error("Failed to execute query: {}", cypher, e);
             throw new RuntimeException("Query execution failed: " + e.getMessage(), e);
@@ -136,28 +109,8 @@ public class GraphQuerySDK {
                 return executeWithProfile(cypher, ast);
             }
             
-            ExecutionPlan plan = rewriter.rewrite(ast);
-            
-            ExecutionResult execResult = executor.execute(plan).join();
-            
-            List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult);
-            
-            results = applyPendingFilters(results, plan.getGlobalContext().getPendingFilters());
-            
-            results = applyGlobalSortAndPagination(results, plan.getGlobalContext());
-            
-            results = applyDeduplication(results, ast);
-            
-            List<String> warnings = collectWarnings(execResult);
-            if (!warnings.isEmpty()) {
-                Map<String, Object> response = new LinkedHashMap<>();
-                response.put("results", results);
-                response.put("warnings", warnings);
-                return objectMapper.writeValueAsString(response);
-            }
-            
-            return objectMapper.writeValueAsString(results);
-            
+            QueryExecutionOutcome outcome = executeQuery(ast);
+            return buildExecutionResponse(outcome);
         } catch (Exception e) {
             log.error("Failed to execute query: {}", cypher, e);
             return buildErrorResponse(e);
@@ -167,18 +120,7 @@ public class GraphQuerySDK {
     public String executeRaw(String cypher) {
         try {
             Program ast = parser.parseCached(cypher);
-            ExecutionPlan plan = rewriter.rewrite(ast);
-            ExecutionResult execResult = executor.execute(plan).join();
-            
-            List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult);
-            
-            results = applyPendingFilters(results, plan.getGlobalContext().getPendingFilters());
-            
-            results = applyGlobalSortAndPagination(results, plan.getGlobalContext());
-            
-            results = applyDeduplication(results, ast);
-            
-            return objectMapper.writeValueAsString(results);
+            return objectMapper.writeValueAsString(executeQuery(ast).results());
         } catch (Exception e) {
             return buildErrorResponse(e);
         }
@@ -192,6 +134,36 @@ public class GraphQuerySDK {
     public String executeRaw(String cypher, Map<String, Object> params) {
         String resolvedCypher = resolveParameters(cypher, params);
         return executeRaw(resolvedCypher);
+    }
+
+    private QueryExecutionOutcome executeQuery(Program ast) {
+        ExecutionPlan plan = rewriter.rewrite(ast);
+        ExecutionResult execResult = executor.execute(plan).join();
+        List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult);
+        results = applyPendingFilters(results, plan.getGlobalContext().getPendingFilters());
+        results = applyGlobalSortAndPagination(results, plan.getGlobalContext());
+        results = applyDeduplication(results, ast);
+        return new QueryExecutionOutcome(results, collectWarnings(execResult));
+    }
+
+    private void ensureExecuteRecordsMode(Program ast) {
+        if (ast.getStatement() != null && ast.getStatement().isExplain()) {
+            throw new UnsupportedOperationException("EXPLAIN not supported in executeRecords mode");
+        }
+        if (ast.getStatement() != null && ast.getStatement().isProfile()) {
+            throw new UnsupportedOperationException("PROFILE not supported in executeRecords mode");
+        }
+    }
+
+    private String buildExecutionResponse(QueryExecutionOutcome outcome) throws JsonProcessingException {
+        if (outcome.warnings().isEmpty()) {
+            return objectMapper.writeValueAsString(outcome.results());
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("results", outcome.results());
+        response.put("warnings", outcome.warnings());
+        return objectMapper.writeValueAsString(response);
     }
     
     private String resolveParameters(String cypher, Map<String, Object> params) {
@@ -713,26 +685,8 @@ public class GraphQuerySDK {
             boolean includeBatchResults,
             boolean includeUnionResults) {
         Map<String, List<GraphEntity>> entitiesByVarName = new LinkedHashMap<>();
-        
-        for (List<QueryResult> qrList : execResult.getPhysicalResults().values()) {
-            for (QueryResult qr : qrList) {
-                addEntitiesToVarMap(entitiesByVarName, qr.getEntities());
-            }
-        }
-        for (QueryResult qr : execResult.getExternalResults()) {
-            addEntitiesToVarMap(entitiesByVarName, qr.getEntities());
-        }
-        if (includeBatchResults) {
-            for (QueryResult qr : execResult.getBatchResults().values()) {
-                addEntitiesToVarMap(entitiesByVarName, qr.getEntities());
-            }
-        }
-        if (includeUnionResults) {
-            for (QueryResult qr : execResult.getUnionResults().values()) {
-                addEntitiesToVarMap(entitiesByVarName, qr.getEntities());
-            }
-        }
-        
+        visitQueryResults(execResult, includeBatchResults, includeUnionResults,
+                queryResult -> addEntitiesToVarMap(entitiesByVarName, queryResult.getEntities()));
         return entitiesByVarName;
     }
 
@@ -741,27 +695,26 @@ public class GraphQuerySDK {
             boolean includeBatchResults,
             boolean includeUnionResults) {
         List<QueryResult.ResultRow> rows = new ArrayList<>();
-        
+        visitQueryResults(execResult, includeBatchResults, includeUnionResults,
+                queryResult -> rows.addAll(queryResult.getRows()));
+        return rows;
+    }
+
+    private void visitQueryResults(
+            ExecutionResult execResult,
+            boolean includeBatchResults,
+            boolean includeUnionResults,
+            Consumer<QueryResult> consumer) {
         for (List<QueryResult> qrList : execResult.getPhysicalResults().values()) {
-            for (QueryResult qr : qrList) {
-                rows.addAll(qr.getRows());
-            }
+            qrList.forEach(consumer);
         }
-        for (QueryResult qr : execResult.getExternalResults()) {
-            rows.addAll(qr.getRows());
-        }
+        execResult.getExternalResults().forEach(consumer);
         if (includeBatchResults) {
-            for (QueryResult qr : execResult.getBatchResults().values()) {
-                rows.addAll(qr.getRows());
-            }
+            execResult.getBatchResults().values().forEach(consumer);
         }
         if (includeUnionResults) {
-            for (QueryResult qr : execResult.getUnionResults().values()) {
-                rows.addAll(qr.getRows());
-            }
+            execResult.getUnionResults().values().forEach(consumer);
         }
-        
-        return rows;
     }
 
     private void addEntitiesToVarMap(Map<String, List<GraphEntity>> entitiesByVarName, List<GraphEntity> entities) {
@@ -773,6 +726,9 @@ public class GraphQuerySDK {
                 entitiesByVarName.computeIfAbsent(entity.getId(), k -> new ArrayList<>()).add(entity);
             }
         }
+    }
+
+    private record QueryExecutionOutcome(List<Map<String, Object>> results, List<String> warnings) {
     }
     
     private List<PathInfo> extractPathInfo(Program ast, String pathVarName) {

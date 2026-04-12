@@ -4,16 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.federatedquery.adapter.GraphEntity;
 import com.federatedquery.adapter.MockExternalAdapter;
-import com.federatedquery.aggregator.GlobalSorter;
-import com.federatedquery.aggregator.ResultStitcher;
-import com.federatedquery.aggregator.UnionDeduplicator;
-import com.federatedquery.executor.FederatedExecutor;
 import com.federatedquery.metadata.*;
-import com.federatedquery.parser.CypherASTVisitor;
-import com.federatedquery.parser.CypherParserFacade;
-import com.federatedquery.reliability.WhereConditionPushdown;
-import com.federatedquery.rewriter.QueryRewriter;
-import com.federatedquery.rewriter.VirtualEdgeDetector;
 import com.federatedquery.sdk.GraphQuerySDK;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,6 +13,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.*;
 
+import static com.federatedquery.e2e.E2EGraphEntityFactory.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MissingCoverageE2ETest {
@@ -35,84 +27,24 @@ class MissingCoverageE2ETest {
 
     @BeforeEach
     void setUp() {
-        registry = new MetadataRegistryImpl();
+        FederatedE2ETestFixture fixture = new FederatedE2ETestFixture()
+                .registerDataSource("tugraph", DataSourceType.TUGRAPH_BOLT)
+                .registerDataSource("kpi-service", DataSourceType.REST_API)
+                .registerDataSource("alarm-service", DataSourceType.REST_API)
+                .registerLabel("NetworkElement", false, "tugraph")
+                .registerLabel("LTP", false, "tugraph")
+                .registerLabel("Person", false, "tugraph")
+                .registerLabel("KPI", true, "kpi-service")
+                .registerLabel("Alarm", true, "alarm-service")
+                .registerVirtualEdge("NEHasKPI", "kpi-service", "getKPIByNeIds", binding -> binding.setLastHopOnly(true))
+                .registerVirtualEdge("NEHasAlarms", "alarm-service", "getAlarmsByNeIds", binding -> binding.setLastHopOnly(true));
 
-        DataSourceMetadata tugraph = new DataSourceMetadata();
-        tugraph.setName("tugraph");
-        tugraph.setType(DataSourceType.TUGRAPH_BOLT);
-        registry.registerDataSource(tugraph);
-
-        DataSourceMetadata kpiService = new DataSourceMetadata();
-        kpiService.setName("kpi-service");
-        kpiService.setType(DataSourceType.REST_API);
-        registry.registerDataSource(kpiService);
-
-        DataSourceMetadata alarmService = new DataSourceMetadata();
-        alarmService.setName("alarm-service");
-        alarmService.setType(DataSourceType.REST_API);
-        registry.registerDataSource(alarmService);
-
-        LabelMetadata neLabel = new LabelMetadata();
-        neLabel.setLabel("NetworkElement");
-        neLabel.setVirtual(false);
-        neLabel.setDataSource("tugraph");
-        registry.registerLabel(neLabel);
-
-        LabelMetadata ltpLabel = new LabelMetadata();
-        ltpLabel.setLabel("LTP");
-        ltpLabel.setVirtual(false);
-        ltpLabel.setDataSource("tugraph");
-        registry.registerLabel(ltpLabel);
-
-        LabelMetadata personLabel = new LabelMetadata();
-        personLabel.setLabel("Person");
-        personLabel.setVirtual(false);
-        personLabel.setDataSource("tugraph");
-        registry.registerLabel(personLabel);
-
-        LabelMetadata kpiLabel = new LabelMetadata();
-        kpiLabel.setLabel("KPI");
-        kpiLabel.setVirtual(true);
-        kpiLabel.setDataSource("kpi-service");
-        registry.registerLabel(kpiLabel);
-
-        LabelMetadata alarmLabel = new LabelMetadata();
-        alarmLabel.setLabel("Alarm");
-        alarmLabel.setVirtual(true);
-        alarmLabel.setDataSource("alarm-service");
-        registry.registerLabel(alarmLabel);
-
-        VirtualEdgeBinding neHasKpi = new VirtualEdgeBinding();
-        neHasKpi.setEdgeType("NEHasKPI");
-        neHasKpi.setTargetDataSource("kpi-service");
-        neHasKpi.setOperatorName("getKPIByNeIds");
-        neHasKpi.setLastHopOnly(true);
-        registry.registerVirtualEdge(neHasKpi);
-
-        VirtualEdgeBinding neHasAlarms = new VirtualEdgeBinding();
-        neHasAlarms.setEdgeType("NEHasAlarms");
-        neHasAlarms.setTargetDataSource("alarm-service");
-        neHasAlarms.setOperatorName("getAlarmsByNeIds");
-        neHasAlarms.setLastHopOnly(true);
-        registry.registerVirtualEdge(neHasAlarms);
-
-        tugraphAdapter = new MockExternalAdapter();
-        tugraphAdapter.setDataSourceName("tugraph");
-        kpiAdapter = new MockExternalAdapter();
-        kpiAdapter.setDataSourceName("kpi-service");
-        alarmAdapter = new MockExternalAdapter();
-        alarmAdapter.setDataSourceName("alarm-service");
-
-        CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor());
-        VirtualEdgeDetector detector = new VirtualEdgeDetector(registry);
-        QueryRewriter rewriter = new QueryRewriter(registry, detector, new WhereConditionPushdown(registry));
-        FederatedExecutor executor = new FederatedExecutor(registry);
-        executor.registerAdapter("tugraph", tugraphAdapter);
-        executor.registerAdapter("kpi-service", kpiAdapter);
-        executor.registerAdapter("alarm-service", alarmAdapter);
-
-        sdk = new GraphQuerySDK(parser, rewriter, executor, new ResultStitcher(), new GlobalSorter(), new UnionDeduplicator());
-        objectMapper = new ObjectMapper();
+        registry = fixture.registry();
+        tugraphAdapter = fixture.createAdapter("tugraph");
+        kpiAdapter = fixture.createAdapter("kpi-service");
+        alarmAdapter = fixture.createAdapter("alarm-service");
+        sdk = fixture.createSdk();
+        objectMapper = fixture.objectMapper();
     }
 
     @Nested
@@ -1232,24 +1164,4 @@ class MissingCoverageE2ETest {
         }
     }
 
-    private GraphEntity createNEEntity(String id, String name, String type) {
-        GraphEntity entity = GraphEntity.node(id, "NetworkElement");
-        entity.setProperty("name", name);
-        entity.setProperty("type", type);
-        return entity;
-    }
-
-    private GraphEntity createLTPEntity(String id, String name, String type) {
-        GraphEntity entity = GraphEntity.node(id, "LTP");
-        entity.setProperty("name", name);
-        entity.setProperty("type", type);
-        return entity;
-    }
-
-    private GraphEntity createKPIEntity(String id, String name, double value) {
-        GraphEntity entity = GraphEntity.node(id, "KPI");
-        entity.setProperty("name", name);
-        entity.setProperty("value", value);
-        return entity;
-    }
 }

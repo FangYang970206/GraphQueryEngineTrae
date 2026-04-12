@@ -86,34 +86,11 @@ public class FederatedExecutor {
             List<ExternalQuery> independentQueries) {
         
         List<CompletableFuture<QueryResult>> futures = new ArrayList<>();
-        
-        for (PhysicalQuery pq : physicalQueries) {
-            futures.add(executePhysical(pq).thenApplyAsync(r -> {
-                result.addPhysicalResult(pq.getId(), r);
-                return r;
-            }, executorService));
-        }
-        
-        for (ExternalQuery query : independentQueries) {
-            futures.add(executeExternal(query).thenApplyAsync(r -> {
-                result.addExternalResult(r);
-                return r;
-            }, executorService));
-        }
-        
-        for (UnionPart union : plan.getUnionParts()) {
-            futures.add(executeUnion(union).thenApplyAsync(r -> {
-                result.addUnionResult(union.getId(), r);
-                return r;
-            }, executorService));
-        }
-        
+        futures.addAll(schedulePhysicalQueries(physicalQueries, result));
+        futures.addAll(scheduleIndependentQueries(independentQueries, result));
+        futures.addAll(scheduleUnionQueries(plan.getUnionParts(), result));
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                .thenApplyAsync(v -> {
-                    result.setSuccess(true);
-                    result.setExecutionTimeMs(System.currentTimeMillis() - result.getStartTime());
-                    return result;
-                }, executorService);
+                .thenApplyAsync(v -> markExecutionSuccess(result), executorService);
     }
     
     private CompletableFuture<ExecutionResult> executeWithDependencyAwareness(
@@ -123,58 +100,15 @@ public class FederatedExecutor {
             List<ExternalQuery> independentQueries,
             List<ExternalQuery> dependentQueries) {
         
-        List<CompletableFuture<QueryResult>> physicalFutures = new ArrayList<>();
-        
-        for (PhysicalQuery pq : physicalQueries) {
-            physicalFutures.add(executePhysical(pq).thenApplyAsync(r -> {
-                result.addPhysicalResult(pq.getId(), r);
-                return r;
-            }, executorService));
-        }
-        
-        List<CompletableFuture<QueryResult>> independentFutures = new ArrayList<>();
-        for (ExternalQuery query : independentQueries) {
-            independentFutures.add(executeExternal(query).thenApplyAsync(r -> {
-                result.addExternalResult(r);
-                return r;
-            }, executorService));
-        }
+        List<CompletableFuture<QueryResult>> physicalFutures = schedulePhysicalQueries(physicalQueries, result);
+        List<CompletableFuture<QueryResult>> independentFutures = scheduleIndependentQueries(independentQueries, result);
         
         return CompletableFuture.allOf(physicalFutures.toArray(new CompletableFuture[0]))
                 .thenComposeAsync(physicalVoid -> {
                     log.debug("Physical queries completed, extracting IDs for dependent queries");
                     
                     Map<String, Map<String, Set<String>>> dataByVariable = extractIdsAndPropertiesFromPhysicalResults(result);
-                    
-                    for (ExternalQuery depQuery : dependentQueries) {
-                        String sourceVar = depQuery.getSourceVariableName();
-                        String inputIdField = depQuery.getInputIdField();
-                        
-                        if (sourceVar != null && dataByVariable.containsKey(sourceVar)) {
-                            Map<String, Set<String>> propMap = dataByVariable.get(sourceVar);
-                            
-                            Set<String> ids = null;
-                            if (inputIdField != null && propMap.containsKey(inputIdField)) {
-                                ids = propMap.get(inputIdField);
-                                log.debug("Using property '{}' for variable '{}': {} values", 
-                                        inputIdField, sourceVar, ids.size());
-                            } else if (propMap.containsKey("_id")) {
-                                ids = propMap.get("_id");
-                                log.debug("Using _id for variable '{}': {} values", sourceVar, ids.size());
-                            }
-                            
-                            if (ids != null && !ids.isEmpty()) {
-                                depQuery.getInputIds().clear();
-                                depQuery.getInputIds().addAll(ids);
-                                log.debug("Populated {} IDs for external query {} from variable {} (field: {})", 
-                                        ids.size(), depQuery.getId(), sourceVar, inputIdField != null ? inputIdField : "_id");
-                            } else {
-                                log.warn("No IDs found for source variable: {} with field: {}", sourceVar, inputIdField);
-                            }
-                        } else {
-                            log.warn("No data found for source variable: {}", sourceVar);
-                        }
-                    }
+                    populateDependentQueryInputIds(dependentQueries, dataByVariable);
                     
                     List<CompletableFuture<QueryResult>> dependentFutures = new ArrayList<>();
                     
@@ -201,30 +135,13 @@ public class FederatedExecutor {
                             .collect(Collectors.toList());
                     
                     for (ExternalQuery query : directDependentQueries) {
-                        dependentFutures.add(executeExternal(query).thenApplyAsync(r -> {
-                            QueryResult enriched = enrichExternalResultWithSourceRows(query, normalizeExternalResult(query, r), result);
-                            result.addExternalResult(enriched);
-                            return enriched;
-                        }, executorService));
+                        dependentFutures.add(scheduleDependentQuery(query, result));
                     }
                     
                     if (!batchDependentQueries.isEmpty()) {
                         List<BatchRequest> batches = batchingStrategy.batch(batchDependentQueries);
                         for (BatchRequest batch : batches) {
-                            dependentFutures.add(executeBatch(batch).thenApplyAsync(r -> {
-                                result.addBatchResult(batch.getId(), r);
-                                List<QueryResult> unbatched = batchingStrategy.unbatch(batch, r);
-                                for (int i = 0; i < unbatched.size(); i++) {
-                                    ExternalQuery originalQuery = i < batch.getOriginalQueries().size()
-                                            ? batch.getOriginalQueries().get(i)
-                                            : null;
-                                    QueryResult qr = originalQuery != null
-                                            ? enrichExternalResultWithSourceRows(originalQuery, normalizeExternalResult(originalQuery, unbatched.get(i)), result)
-                                            : unbatched.get(i);
-                                    result.addExternalResult(qr);
-                                }
-                                return r;
-                            }, executorService));
+                            dependentFutures.add(scheduleBatchQuery(batch, result));
                         }
                     }
                     
@@ -236,21 +153,129 @@ public class FederatedExecutor {
                     
                     return CompletableFuture.allOf(dependentVoid, independentVoid);
                 }, executorService)
-                .thenComposeAsync(v -> {
-                    List<CompletableFuture<QueryResult>> unionFutures = new ArrayList<>();
-                    for (UnionPart union : plan.getUnionParts()) {
-                        unionFutures.add(executeUnion(union).thenApplyAsync(r -> {
-                            result.addUnionResult(union.getId(), r);
-                            return r;
-                        }, executorService));
-                    }
-                    return CompletableFuture.allOf(unionFutures.toArray(new CompletableFuture[0]));
-                }, executorService)
-                .thenApplyAsync(v -> {
-                    result.setSuccess(true);
-                    result.setExecutionTimeMs(System.currentTimeMillis() - result.getStartTime());
-                    return result;
-                }, executorService);
+                .thenComposeAsync(v -> CompletableFuture.allOf(
+                        scheduleUnionQueries(plan.getUnionParts(), result).toArray(new CompletableFuture[0])
+                ), executorService)
+                .thenApplyAsync(v -> markExecutionSuccess(result), executorService);
+    }
+
+    private List<CompletableFuture<QueryResult>> schedulePhysicalQueries(
+            List<PhysicalQuery> physicalQueries,
+            ExecutionResult result) {
+        List<CompletableFuture<QueryResult>> futures = new ArrayList<>();
+        for (PhysicalQuery query : physicalQueries) {
+            futures.add(executePhysical(query).thenApplyAsync(queryResult -> {
+                result.addPhysicalResult(query.getId(), queryResult);
+                return queryResult;
+            }, executorService));
+        }
+        return futures;
+    }
+
+    private List<CompletableFuture<QueryResult>> scheduleIndependentQueries(
+            List<ExternalQuery> independentQueries,
+            ExecutionResult result) {
+        List<CompletableFuture<QueryResult>> futures = new ArrayList<>();
+        for (ExternalQuery query : independentQueries) {
+            futures.add(executeExternal(query).thenApplyAsync(queryResult -> {
+                result.addExternalResult(queryResult);
+                return queryResult;
+            }, executorService));
+        }
+        return futures;
+    }
+
+    private List<CompletableFuture<QueryResult>> scheduleUnionQueries(
+            List<UnionPart> unionParts,
+            ExecutionResult result) {
+        List<CompletableFuture<QueryResult>> futures = new ArrayList<>();
+        for (UnionPart union : unionParts) {
+            futures.add(executeUnion(union).thenApplyAsync(queryResult -> {
+                result.addUnionResult(union.getId(), queryResult);
+                return queryResult;
+            }, executorService));
+        }
+        return futures;
+    }
+
+    private void populateDependentQueryInputIds(
+            List<ExternalQuery> dependentQueries,
+            Map<String, Map<String, Set<String>>> dataByVariable) {
+        for (ExternalQuery dependentQuery : dependentQueries) {
+            String sourceVar = dependentQuery.getSourceVariableName();
+            String inputIdField = dependentQuery.getInputIdField();
+
+            if (sourceVar == null || !dataByVariable.containsKey(sourceVar)) {
+                log.warn("No data found for source variable: {}", sourceVar);
+                continue;
+            }
+
+            Map<String, Set<String>> propMap = dataByVariable.get(sourceVar);
+            Set<String> ids = resolveInputIds(propMap, inputIdField);
+            if (ids == null || ids.isEmpty()) {
+                log.warn("No IDs found for source variable: {} with field: {}", sourceVar, inputIdField);
+                continue;
+            }
+
+            dependentQuery.getInputIds().clear();
+            dependentQuery.getInputIds().addAll(ids);
+            log.debug("Populated {} IDs for external query {} from variable {} (field: {})",
+                    ids.size(), dependentQuery.getId(), sourceVar, inputIdField != null ? inputIdField : "_id");
+        }
+    }
+
+    private Set<String> resolveInputIds(Map<String, Set<String>> propMap, String inputIdField) {
+        if (propMap == null) {
+            return null;
+        }
+        if (inputIdField != null && propMap.containsKey(inputIdField)) {
+            Set<String> ids = propMap.get(inputIdField);
+            log.debug("Using property '{}' with {} values", inputIdField, ids.size());
+            return ids;
+        }
+        if (propMap.containsKey("_id")) {
+            Set<String> ids = propMap.get("_id");
+            log.debug("Using _id with {} values", ids.size());
+            return ids;
+        }
+        return null;
+    }
+
+    private CompletableFuture<QueryResult> scheduleDependentQuery(ExternalQuery query, ExecutionResult result) {
+        return executeExternal(query).thenApplyAsync(queryResult -> {
+            QueryResult enriched = enrichExternalResultWithSourceRows(
+                    query,
+                    normalizeExternalResult(query, queryResult),
+                    result);
+            result.addExternalResult(enriched);
+            return enriched;
+        }, executorService);
+    }
+
+    private CompletableFuture<QueryResult> scheduleBatchQuery(BatchRequest batch, ExecutionResult result) {
+        return executeBatch(batch).thenApplyAsync(batchResult -> {
+            result.addBatchResult(batch.getId(), batchResult);
+            List<QueryResult> unbatchedResults = batchingStrategy.unbatch(batch, batchResult);
+            for (int i = 0; i < unbatchedResults.size(); i++) {
+                ExternalQuery originalQuery = i < batch.getOriginalQueries().size()
+                        ? batch.getOriginalQueries().get(i)
+                        : null;
+                QueryResult currentResult = originalQuery != null
+                        ? enrichExternalResultWithSourceRows(
+                                originalQuery,
+                                normalizeExternalResult(originalQuery, unbatchedResults.get(i)),
+                                result)
+                        : unbatchedResults.get(i);
+                result.addExternalResult(currentResult);
+            }
+            return batchResult;
+        }, executorService);
+    }
+
+    private ExecutionResult markExecutionSuccess(ExecutionResult result) {
+        result.setSuccess(true);
+        result.setExecutionTimeMs(System.currentTimeMillis() - result.getStartTime());
+        return result;
     }
     
     private Map<String, Map<String, Set<String>>> extractIdsAndPropertiesFromPhysicalResults(ExecutionResult result) {
@@ -264,38 +289,12 @@ public class FederatedExecutor {
                         varName = entity.getLabel();
                     }
                     if (varName != null) {
-                        Map<String, Set<String>> propMap = dataByVariable.computeIfAbsent(varName, k -> new HashMap<>());
-                        
-                        if (entity.getId() != null) {
-                            propMap.computeIfAbsent("_id", k -> new HashSet<>()).add(entity.getId());
-                        }
-                        
-                        if (entity.getProperties() != null) {
-                            for (Map.Entry<String, Object> entry : entity.getProperties().entrySet()) {
-                                if (entry.getValue() != null) {
-                                    propMap.computeIfAbsent(entry.getKey(), k -> new HashSet<>())
-                                            .add(String.valueOf(entry.getValue()));
-                                }
-                            }
-                        }
+                        addEntityData(dataByVariable, varName, entity);
                     }
                     
                     String label = entity.getLabel();
                     if (label != null && !label.equals(varName)) {
-                        Map<String, Set<String>> propMap = dataByVariable.computeIfAbsent(label, k -> new HashMap<>());
-                        
-                        if (entity.getId() != null) {
-                            propMap.computeIfAbsent("_id", k -> new HashSet<>()).add(entity.getId());
-                        }
-                        
-                        if (entity.getProperties() != null) {
-                            for (Map.Entry<String, Object> entry : entity.getProperties().entrySet()) {
-                                if (entry.getValue() != null) {
-                                    propMap.computeIfAbsent(entry.getKey(), k -> new HashSet<>())
-                                            .add(String.valueOf(entry.getValue()));
-                                }
-                            }
-                        }
+                        addEntityData(dataByVariable, label, entity);
                     }
                 }
             }
@@ -306,35 +305,24 @@ public class FederatedExecutor {
         
         return dataByVariable;
     }
-    
-    private Map<String, Set<String>> extractIdsFromPhysicalResults(ExecutionResult result) {
-        Map<String, Set<String>> idsByVariable = new HashMap<>();
-        
-        for (List<QueryResult> qrList : result.getPhysicalResults().values()) {
-            for (QueryResult qr : qrList) {
-                for (GraphEntity entity : qr.getEntities()) {
-                    String varName = entity.getVariableName();
-                    if (varName == null) {
-                        varName = entity.getLabel();
-                    }
-                    if (varName != null) {
-                        idsByVariable.computeIfAbsent(varName, k -> new HashSet<>())
-                                .add(entity.getId());
-                    }
-                    
-                    String label = entity.getLabel();
-                    if (label != null) {
-                        idsByVariable.computeIfAbsent(label, k -> new HashSet<>())
-                                .add(entity.getId());
-                    }
-                }
+
+    private void addEntityData(
+            Map<String, Map<String, Set<String>>> dataByVariable,
+            String key,
+            GraphEntity entity) {
+        Map<String, Set<String>> propMap = dataByVariable.computeIfAbsent(key, ignored -> new HashMap<>());
+        if (entity.getId() != null) {
+            propMap.computeIfAbsent("_id", ignored -> new HashSet<>()).add(entity.getId());
+        }
+        if (entity.getProperties() == null) {
+            return;
+        }
+        for (Map.Entry<String, Object> entry : entity.getProperties().entrySet()) {
+            if (entry.getValue() != null) {
+                propMap.computeIfAbsent(entry.getKey(), ignored -> new HashSet<>())
+                        .add(String.valueOf(entry.getValue()));
             }
         }
-        
-        log.debug("Extracted IDs by variable: {}", idsByVariable.entrySet().stream()
-                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size())));
-        
-        return idsByVariable;
     }
     
     private CompletableFuture<QueryResult> executePhysical(PhysicalQuery query) {
@@ -378,19 +366,7 @@ public class FederatedExecutor {
     private CompletableFuture<QueryResult> executeWithRetryInternal(DataSourceAdapter adapter, ExternalQuery query, int maxRetries, int attempt) {
         return runOnExecutor(() -> adapter.execute(query))
                 .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
-                .thenApply(result -> {
-                    if (result != null && result.getEntities() != null) {
-                        for (GraphEntity entity : result.getEntities()) {
-                            if (query.getEdgeType() != null && entity.getSourceEdgeType() == null) {
-                                entity.setSourceEdgeType(query.getEdgeType());
-                            }
-                            if (query.getTargetLabel() != null && entity.getLabel() == null) {
-                                entity.setLabel(query.getTargetLabel());
-                            }
-                        }
-                    }
-                    return result;
-                })
+                .thenApply(result -> applyExternalQueryMetadata(query, result))
                 .exceptionally(e -> {
                     if (attempt < maxRetries) {
                         log.warn("External query attempt {}/{} failed for data source: {}, retrying...", 
@@ -458,6 +434,10 @@ public class FederatedExecutor {
     }
 
     private QueryResult normalizeExternalResult(ExternalQuery query, QueryResult result) {
+        return applyExternalQueryMetadata(query, result);
+    }
+
+    private QueryResult applyExternalQueryMetadata(ExternalQuery query, QueryResult result) {
         if (query == null || result == null || result.getEntities() == null) {
             return result;
         }
