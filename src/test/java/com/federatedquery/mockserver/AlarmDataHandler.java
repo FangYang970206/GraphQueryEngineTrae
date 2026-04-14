@@ -1,8 +1,8 @@
 package com.federatedquery.mockserver;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
+import com.federatedquery.util.JsonUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,11 +17,9 @@ public class AlarmDataHandler implements HttpHandler {
     private static final Logger logger = LoggerFactory.getLogger(AlarmDataHandler.class);
     
     private final MockDataRepository repository;
-    private final ObjectMapper objectMapper;
-    
+
     public AlarmDataHandler(MockDataRepository repository) {
         this.repository = repository;
-        this.objectMapper = repository.getObjectMapper();
     }
     
     @Override
@@ -75,7 +73,7 @@ public class AlarmDataHandler implements HttpHandler {
                 alarms = repository.projectFields(alarms, projectionFields);
             }
             
-            String jsonResponse = objectMapper.writeValueAsString(alarms);
+            String jsonResponse = JsonUtil.toJson(alarms);
             sendResponse(exchange, 200, jsonResponse);
             
             logger.info("ALARM query: medn={}, timestamp={}, strategy={}, fields={}, resultCount={}", 
@@ -107,7 +105,7 @@ public class AlarmDataHandler implements HttpHandler {
             if (body != null && !body.isEmpty()) {
                 try {
                     @SuppressWarnings("unchecked")
-                    Map<String, Object> bodyParams = objectMapper.readValue(body, Map.class);
+                    Map<String, Object> bodyParams = JsonUtil.readValue(body, Map.class);
                     for (Map.Entry<String, Object> entry : bodyParams.entrySet()) {
                         params.putIfAbsent(entry.getKey(), String.valueOf(entry.getValue()));
                     }

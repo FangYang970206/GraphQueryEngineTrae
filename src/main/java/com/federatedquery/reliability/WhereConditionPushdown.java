@@ -3,6 +3,7 @@ package com.federatedquery.reliability;
 import com.federatedquery.ast.*;
 import com.federatedquery.metadata.LabelMetadata;
 import com.federatedquery.metadata.MetadataRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -12,8 +13,12 @@ import java.util.Set;
 
 @Component
 public class WhereConditionPushdown {
-    private final MetadataRegistry registry;
-    
+    @Autowired
+    private MetadataRegistry registry;
+
+    public WhereConditionPushdown() {
+    }
+
     public WhereConditionPushdown(MetadataRegistry registry) {
         this.registry = registry;
     }

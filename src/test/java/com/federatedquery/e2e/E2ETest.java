@@ -1,11 +1,11 @@
 package com.federatedquery.e2e;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.federatedquery.adapter.*;
 import com.federatedquery.executor.FederatedExecutor;
 import com.federatedquery.metadata.*;
 import com.federatedquery.sdk.GraphQuerySDK;
+import com.federatedquery.util.JsonUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,7 +23,6 @@ class E2ETest {
     private MockExternalAdapter cardAdapter;
     private MockExternalAdapter tugraphAdapter;
     private GraphQuerySDK sdk;
-    private ObjectMapper objectMapper;
     
     @BeforeEach
     void setUp() {
@@ -60,7 +59,6 @@ class E2ETest {
         cardAdapter = fixture.createAdapter("card-service");
         tugraphAdapter = fixture.createAdapter("tugraph");
         sdk = fixture.createSdk();
-        objectMapper = fixture.objectMapper();
     }
     
     @Test
@@ -106,7 +104,7 @@ class E2ETest {
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(5, json.size(), "结果数组应该有5条记录");
         
@@ -178,7 +176,7 @@ class E2ETest {
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
@@ -249,7 +247,7 @@ class E2ETest {
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
@@ -333,7 +331,7 @@ class E2ETest {
 
         String result = sdk.executeRaw(cypher);
 
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
 
@@ -372,7 +370,7 @@ class E2ETest {
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
@@ -410,7 +408,7 @@ class E2ETest {
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
@@ -438,7 +436,7 @@ class E2ETest {
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
@@ -461,7 +459,7 @@ class E2ETest {
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(neEntity));
         String result = sdk.execute("MATCH (n:NetworkElement) RETURN n");
         assertNotNull(result, "结果不能为空");
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         JsonNode row = json.get(0);
@@ -487,7 +485,7 @@ class E2ETest {
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
@@ -521,7 +519,7 @@ class E2ETest {
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(2, json.size(), "结果数组应该有2条记录");
         assertTrue(json.size() <= 5, "结果数量不能超过LIMIT值");
@@ -556,7 +554,7 @@ class E2ETest {
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
@@ -598,7 +596,7 @@ class E2ETest {
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
@@ -651,7 +649,7 @@ class E2ETest {
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
@@ -684,7 +682,7 @@ class E2ETest {
         
         assertNotNull(result, "结果不能为空");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertTrue(json.size() >= 2, "结果至少有2条记录");
         
@@ -722,7 +720,7 @@ class E2ETest {
         
         assertNotNull(result, "结果不能为空");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(3, json.size(), "结果数量应该是3条(LIMIT 3)");
     }
@@ -742,7 +740,7 @@ class E2ETest {
         
         assertNotNull(result, "结果不能为空");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
     }
@@ -768,7 +766,7 @@ class E2ETest {
         
         assertNotNull(result, "结果不能为空");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
     }
@@ -792,7 +790,7 @@ class E2ETest {
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
@@ -841,7 +839,7 @@ class E2ETest {
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组, 实际结果: " + result);
         assertEquals(1, json.size(), "结果数量应该是1条");
         
@@ -869,7 +867,7 @@ class E2ETest {
         
         assertNotNull(result, "结果不能为空");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组, 实际结果: " + result);
         assertEquals(1, json.size(), "结果数量应该是1条");
     }
@@ -895,7 +893,7 @@ class E2ETest {
         
         assertNotNull(result, "结果不能为空");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertTrue(json.size() <= 2, "WITH LIMIT 2 应该限制结果数量");
     }
@@ -915,7 +913,7 @@ class E2ETest {
         
         assertNotNull(result, "结果不能为空");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
@@ -944,7 +942,7 @@ class E2ETest {
         
         assertNotNull(result, "结果不能为空");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
     }
     
@@ -972,7 +970,7 @@ class E2ETest {
         
         assertNotNull(result, "结果不能为空");
         
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(2, json.size(), "SKIP 1 LIMIT 2 应该返回2条记录");
     }
@@ -985,7 +983,7 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
     }
     
@@ -1003,7 +1001,7 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
@@ -1032,7 +1030,7 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
     }
     
@@ -1050,7 +1048,7 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "结果数组应该有1条记录");
         
@@ -1079,7 +1077,7 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertTrue(json.size() >= 1, "结果数组应该至少有1条记录");
         
@@ -1108,7 +1106,7 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(1, json.size(), "ENDS WITH '01' 过滤后应该只有1条记录");
         
@@ -1136,7 +1134,7 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         
         for (int i = 0; i < json.size(); i++) {
@@ -1164,7 +1162,7 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
         assertEquals(2, json.size(), "结果数组应该有2条记录");
     }
@@ -1189,7 +1187,7 @@ class E2ETest {
         String result = sdk.executeRaw(cypher);
         
         assertNotNull(result, "结果不能为空");
-        JsonNode json = objectMapper.readTree(result);
+        JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
     }
 }

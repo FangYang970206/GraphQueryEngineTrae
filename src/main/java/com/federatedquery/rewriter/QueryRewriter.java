@@ -5,6 +5,7 @@ import com.federatedquery.metadata.MetadataRegistry;
 import com.federatedquery.metadata.VirtualEdgeBinding;
 import com.federatedquery.plan.*;
 import com.federatedquery.reliability.WhereConditionPushdown;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -12,16 +13,26 @@ import java.util.stream.Collectors;
 
 @Component
 public class QueryRewriter {
-    private final MetadataRegistry registry;
-    private final VirtualEdgeDetector detector;
-    private final WhereConditionPushdown whereConditionPushdown;
-    
+    @Autowired
+    private MetadataRegistry registry;
+    @Autowired
+    private VirtualEdgeDetector detector;
+    @Autowired
+    private WhereConditionPushdown whereConditionPushdown;
+
+    public QueryRewriter() {
+    }
+
     public QueryRewriter(MetadataRegistry registry, 
                         VirtualEdgeDetector detector,
                         WhereConditionPushdown whereConditionPushdown) {
         this.registry = registry;
         this.detector = detector;
         this.whereConditionPushdown = whereConditionPushdown;
+    }
+
+    public MetadataRegistry getRegistry() {
+        return registry;
     }
     
     public ExecutionPlan rewrite(Program program) {

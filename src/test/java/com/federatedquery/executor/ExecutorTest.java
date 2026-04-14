@@ -6,20 +6,25 @@ import com.federatedquery.plan.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Spy;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@ExtendWith(MockitoExtension.class)
 class ExecutorTest {
-    private MetadataRegistry registry;
+    @Spy
+    private MetadataRegistryImpl registry = new MetadataRegistryImpl();
     private MockExternalAdapter mockAdapter;
+    @InjectMocks
     private FederatedExecutor executor;
     
     @BeforeEach
     void setUp() {
-        registry = new MetadataRegistryImpl();
-        
         DataSourceMetadata mockSource = new DataSourceMetadata();
         mockSource.setName("mock-service");
         mockSource.setType(DataSourceType.MOCK);
@@ -27,8 +32,6 @@ class ExecutorTest {
         
         mockAdapter = new MockExternalAdapter();
         mockAdapter.setDataSourceName("mock-service");
-        
-        executor = new FederatedExecutor(registry);
         executor.registerAdapter("mock-service", mockAdapter);
     }
     

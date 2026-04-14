@@ -1,13 +1,10 @@
 package com.federatedquery.mockserver;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class MockDataRepository {
-    
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    
+
     private final List<Map<String, Object>> alarmData = new ArrayList<>();
     private final List<Map<String, Object>> kpiData = new ArrayList<>();
     private final List<Map<String, Object>> kpi2Data = new ArrayList<>();
@@ -170,7 +167,4 @@ public class MockDataRepository {
                 .collect(Collectors.toList());
     }
     
-    public ObjectMapper getObjectMapper() {
-        return objectMapper;
-    }
 }

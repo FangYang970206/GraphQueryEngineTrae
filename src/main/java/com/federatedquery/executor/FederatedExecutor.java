@@ -6,6 +6,7 @@ import com.federatedquery.metadata.MetadataRegistry;
 import com.federatedquery.plan.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -25,14 +26,14 @@ public class FederatedExecutor {
     private static final int QUEUE_CAPACITY = 100;
     private static final long KEEP_ALIVE_TIME = 60L;
     
-    private final MetadataRegistry registry;
+    @Autowired
+    private MetadataRegistry registry;
     private final Map<String, DataSourceAdapter> adapters;
     private final ExecutorService executorService;
     private final BatchingStrategy batchingStrategy;
     private long timeoutMs = DEFAULT_TIMEOUT_MS;
-    
-    public FederatedExecutor(MetadataRegistry registry) {
-        this.registry = registry;
+
+    public FederatedExecutor() {
         this.adapters = new ConcurrentHashMap<>();
         this.executorService = new ThreadPoolExecutor(
                 CORE_POOL_SIZE,
@@ -43,6 +44,11 @@ public class FederatedExecutor {
                 new ThreadPoolExecutor.CallerRunsPolicy()
         );
         this.batchingStrategy = new BatchingStrategy();
+    }
+
+    public FederatedExecutor(MetadataRegistry registry) {
+        this();
+        this.registry = registry;
     }
     
     public void setTimeoutMs(long timeoutMs) {

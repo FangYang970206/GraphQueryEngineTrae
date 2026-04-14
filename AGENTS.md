@@ -49,6 +49,13 @@ Cypher → CypherParserFacade (ANTLR4 + Caffeine cache) → AST (Program)
 4. **Global sort/limit**: `ORDER BY` and `LIMIT` are stripped from physical queries, applied in-memory after aggregation.
 5. **No N+1**: External queries are batched via `BatchingStrategy`. Never loop-call external APIs.
 
+## Metadata-Driven Rules
+
+- **No hard-coded graph semantics**: `label` / `edgeType` / schema / property names / id join fields must not be hard-coded in business logic. They must be resolved from `MetadataRegistry`, `LabelMetadata`, and `VirtualEdgeBinding`.
+- **Virtual edge target resolution**: Whether an edge is virtual, its target label, target data source, and join-field mapping must come from metadata lookup. Do not maintain switch/if hard-code tables inside `GraphQuerySDK`, `QueryRewriter`, executor, or tests.
+- **Schema access rule**: Label identity field, required properties, property mapping, and virtual-edge `idMapping` are the single source of truth for query rewrite, stitching, filtering, and path reconstruction.
+- **Test setup rule**: Any new label / virtual edge used in UT or E2E must register complete metadata first; test assertions must validate behavior through registered metadata, not hidden hard-coded assumptions in production code.
+
 ## Testing
 
 ### Mock Data Sources
@@ -146,18 +153,14 @@ assertTrue(executionResult.isSuccess());
 - Spring Framework 6.1.6 (NOT Spring Boot). Used only for `@Component`/`@Service`/`@Configuration` DI.
 - `GraphQueryEngineConfiguration` does `@ComponentScan("com.federatedquery")`.
 - Tests wire components manually — no Spring test context needed.
+- **Component injection rule**: For Spring-managed `@Component` / `@Service` / `@Repository` / `@Configuration` classes in this project, prefer `@Autowired` field injection instead of constructor injection to keep component wiring style consistent across the codebase.
+- **UT mock injection rule**: Unit tests should follow Mockito best practice with annotation-driven injection. Prefer `@Mock` / `@Spy` plus `@InjectMocks` instead of manual `new` chains for the system under test. Avoid the non-standard `@InjectMock` spelling.
 
-## Dependencies
+## JSON Usage
 
-| Library | Version | Purpose |
-|---------|---------|---------|
-| ANTLR4 | 4.13.1 | Cypher parsing |
-| Caffeine | 3.1.8 | Plan cache |
-| Jackson | 2.17.0 | JSON serialization |
-| Neo4j Java Driver | 4.4.18 | TuGraph Bolt connection |
-| JUnit 5 | 5.10.2 | Testing |
-| Mockito | 5.11.0 | Mocking |
-| SLF4J + Logback | 2.0.12 / 1.5.4 | Logging |
+- Shared JSON handling must go through `com.federatedquery.util.JsonUtil`.
+- Do not create `new ObjectMapper()` in production or test code outside `JsonUtil`.
+- If code needs JSON serialization/deserialization, call `JsonUtil` exposed APIs instead of holding per-class `ObjectMapper` instances.
 
 ## Directory Structure
 

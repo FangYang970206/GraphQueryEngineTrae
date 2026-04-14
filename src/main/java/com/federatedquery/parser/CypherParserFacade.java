@@ -8,6 +8,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.misc.ParseCancellationException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.security.MessageDigest;
@@ -16,16 +17,21 @@ import java.util.concurrent.TimeUnit;
 
 @Component
 public class CypherParserFacade {
-    private final CypherASTVisitor astVisitor;
+    @Autowired
+    private CypherASTVisitor astVisitor;
     private final Cache<String, Program> planCache;
-    
-    public CypherParserFacade(CypherASTVisitor astVisitor) {
-        this.astVisitor = astVisitor;
+
+    public CypherParserFacade() {
         this.planCache = Caffeine.newBuilder()
                 .maximumSize(1000)
                 .expireAfterWrite(1, TimeUnit.HOURS)
                 .recordStats()
                 .build();
+    }
+
+    public CypherParserFacade(CypherASTVisitor astVisitor) {
+        this();
+        this.astVisitor = astVisitor;
     }
     
     public Program parse(String cypher) {

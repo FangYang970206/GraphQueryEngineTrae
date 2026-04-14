@@ -1,7 +1,6 @@
 package com.federatedquery.e2e;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.federatedquery.adapter.*;
 import com.federatedquery.aggregator.*;
 import com.federatedquery.connector.*;
@@ -30,7 +29,6 @@ class TuGraphRealDatabaseE2ETest {
     private MetadataRegistry registry;
     private MockExternalAdapter kpiAdapter;
     private MockExternalAdapter alarmAdapter;
-    private ObjectMapper objectMapper;
     
     @BeforeAll
     static void setUpClass() {
@@ -195,7 +193,6 @@ class TuGraphRealDatabaseE2ETest {
         UnionDeduplicator deduplicator = new UnionDeduplicator();
         
         sdk = new GraphQuerySDK(parser, rewriter, executor, stitcher, sorter, deduplicator);
-        objectMapper = new ObjectMapper();
     }
     
     @Test

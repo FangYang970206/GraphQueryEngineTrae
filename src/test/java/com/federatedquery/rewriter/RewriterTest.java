@@ -8,25 +8,34 @@ import com.federatedquery.plan.ExecutionPlan;
 import com.federatedquery.plan.PhysicalQuery;
 import com.federatedquery.plan.ExternalQuery;
 import com.federatedquery.reliability.WhereConditionPushdown;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Spy;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@ExtendWith(MockitoExtension.class)
 class RewriterTest {
-    private MetadataRegistry registry;
+    @Spy
+    private MetadataRegistryImpl registry = new MetadataRegistryImpl();
     private VirtualEdgeDetector detector;
+    private WhereConditionPushdown whereConditionPushdown;
     private QueryRewriter rewriter;
+    @Spy
+    private CypherASTVisitor astVisitor = new CypherASTVisitor();
     private CypherParserFacade parser;
     
     @BeforeEach
     void setUp() {
-        registry = new MetadataRegistryImpl();
         detector = new VirtualEdgeDetector(registry);
-        rewriter = new QueryRewriter(registry, detector, new WhereConditionPushdown(registry));
-        parser = new CypherParserFacade(new CypherASTVisitor());
-        
+        whereConditionPushdown = new WhereConditionPushdown(registry);
+        rewriter = new QueryRewriter(registry, detector, whereConditionPushdown);
+        parser = new CypherParserFacade(astVisitor);
+
         DataSourceMetadata tugraph = new DataSourceMetadata();
         tugraph.setName("tugraph");
         tugraph.setType(DataSourceType.TUGRAPH_BOLT);

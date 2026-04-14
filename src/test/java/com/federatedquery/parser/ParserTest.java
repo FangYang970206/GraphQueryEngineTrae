@@ -1,19 +1,21 @@
 package com.federatedquery.parser;
 
 import com.federatedquery.ast.*;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Spy;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@ExtendWith(MockitoExtension.class)
 class ParserTest {
+    @Spy
+    private CypherASTVisitor astVisitor = new CypherASTVisitor();
+    @InjectMocks
     private CypherParserFacade parser;
-    
-    @BeforeEach
-    void setUp() {
-        parser = new CypherParserFacade(new CypherASTVisitor());
-    }
     
     @Test
     @DisplayName("Parse simple MATCH clause")

@@ -1,7 +1,6 @@
 package com.federatedquery.e2e;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.federatedquery.adapter.*;
 import com.federatedquery.aggregator.*;
 import com.federatedquery.connector.*;
@@ -14,6 +13,7 @@ import com.federatedquery.rewriter.QueryRewriter;
 import com.federatedquery.rewriter.VirtualEdgeDetector;
 import com.federatedquery.reliability.WhereConditionPushdown;
 import com.federatedquery.sdk.GraphQuerySDK;
+import com.federatedquery.util.JsonUtil;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.DisabledIf;
 import org.slf4j.Logger;
@@ -34,7 +34,6 @@ class VirtualGraphCaseE2ETest {
     
     private GraphQuerySDK sdk;
     private MetadataRegistry registry;
-    private ObjectMapper objectMapper;
     
     @BeforeAll
     static void setUpClass() {
@@ -275,7 +274,6 @@ class VirtualGraphCaseE2ETest {
         UnionDeduplicator deduplicator = new UnionDeduplicator();
         
         sdk = new GraphQuerySDK(parser, rewriter, executor, stitcher, sorter, deduplicator, connector);
-        objectMapper = new ObjectMapper();
     }
     
     @Test
@@ -319,7 +317,7 @@ class VirtualGraphCaseE2ETest {
         assertNotNull(result, "结果不能为空");
         logger.info("Case2 SDK返回结果: {}", result);
         
-        JsonNode jsonNode = objectMapper.readTree(result);
+        JsonNode jsonNode = JsonUtil.readTree(result);
         
         if (jsonNode.has("results")) {
             jsonNode = jsonNode.get("results");
@@ -725,7 +723,7 @@ class VirtualGraphCaseE2ETest {
     }
 
     private JsonNode extractResultsArray(String result) throws Exception {
-        JsonNode jsonNode = objectMapper.readTree(result);
+        JsonNode jsonNode = JsonUtil.readTree(result);
         if (jsonNode.has("results")) {
             jsonNode = jsonNode.get("results");
         }

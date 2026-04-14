@@ -1,10 +1,10 @@
 package com.federatedquery.e2e;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.federatedquery.adapter.*;
 import com.federatedquery.metadata.*;
 import com.federatedquery.sdk.GraphQuerySDK;
+import com.federatedquery.util.JsonUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -21,7 +21,6 @@ class DependencyAwareExecutionE2ETest {
     private MockExternalAdapter tugraphAdapter;
     private MockExternalAdapter kpiAdapter;
     private GraphQuerySDK sdk;
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
@@ -41,7 +40,6 @@ class DependencyAwareExecutionE2ETest {
         tugraphAdapter = fixture.createAdapter("tugraph");
         kpiAdapter = fixture.createAdapter("kpi-service");
         sdk = fixture.createSdk();
-        objectMapper = fixture.objectMapper();
     }
 
     @Nested
@@ -81,7 +79,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN p";
 
-            JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(1, json.size(), "Result should contain exactly 1 row");
 
@@ -151,7 +149,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN ne, ltp, target";
 
-            JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(3, json.size(), "Result should have exactly 3 rows");
 
@@ -183,7 +181,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN ne, ltp, target";
 
-            JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
         }
     }
@@ -232,7 +230,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2|LTPHasElement]->(target) RETURN p";
 
-            JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(1, json.size(), "Result should contain exactly 1 row");
 
@@ -285,7 +283,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2|LTPHasElement]->(target) RETURN p";
 
-            JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(1, json.size(), "Result must contain exactly 1 row");
 
@@ -336,7 +334,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2|LTPHasElement]->(target) RETURN ne, ltp, target";
 
-            JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(2, json.size(), "Should return exactly 2 rows");
 
@@ -373,7 +371,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE999'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN ne, ltp, target";
 
-            JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(0, json.size(), "Result should be empty when physical query returns no results");
         }
@@ -395,7 +393,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN ne, ltp, target";
 
-            JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
         }
 
@@ -430,7 +428,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasPort]->(port)-[:PortHasKPI]->(target) RETURN ne, ltp, port, target";
 
-            JsonNode json = objectMapper.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
             assertTrue(json.isArray(), "Result must be an array");
         }
     }

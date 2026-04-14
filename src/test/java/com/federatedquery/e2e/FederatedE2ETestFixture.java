@@ -1,6 +1,5 @@
 package com.federatedquery.e2e;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.federatedquery.adapter.MockExternalAdapter;
 import com.federatedquery.aggregator.GlobalSorter;
 import com.federatedquery.aggregator.ResultStitcher;
@@ -26,7 +25,6 @@ import java.util.function.Consumer;
 final class FederatedE2ETestFixture {
     private final MetadataRegistry registry = new MetadataRegistryImpl();
     private final Map<String, MockExternalAdapter> adapters = new LinkedHashMap<>();
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     FederatedE2ETestFixture registerDataSource(String name, DataSourceType type) {
         return registerDataSource(name, type, null);
@@ -75,10 +73,6 @@ final class FederatedE2ETestFixture {
 
     MetadataRegistry registry() {
         return registry;
-    }
-
-    ObjectMapper objectMapper() {
-        return objectMapper;
     }
 
     GraphQuerySDK createSdk() {

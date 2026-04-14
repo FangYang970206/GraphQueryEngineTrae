@@ -11,9 +11,12 @@ import com.federatedquery.ast.ReturnClause;
 import com.federatedquery.ast.Statement;
 import com.federatedquery.ast.UnionClause;
 import com.federatedquery.ast.Variable;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Spy;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -22,13 +25,12 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@ExtendWith(MockitoExtension.class)
 class GrammarQueryParserCoverageTest {
+    @Spy
+    private CypherASTVisitor astVisitor = new CypherASTVisitor();
+    @InjectMocks
     private CypherParserFacade parser;
-
-    @BeforeEach
-    void setUp() {
-        parser = new CypherParserFacade(new CypherASTVisitor());
-    }
 
     @Test
     @DisplayName("USING SNAPSHOT + PROJECT BY: exact AST fields")

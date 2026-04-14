@@ -1,7 +1,7 @@
 package com.federatedquery.mockserver;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.federatedquery.util.JsonUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,7 +19,6 @@ class MockHttpServerTest {
     
     private MockHttpServer server;
     private HttpClient httpClient;
-    private ObjectMapper objectMapper;
     private int port;
     
     @BeforeEach
@@ -31,8 +30,6 @@ class MockHttpServerTest {
         httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
-        
-        objectMapper = new ObjectMapper();
     }
     
     @AfterEach
@@ -56,7 +53,7 @@ class MockHttpServerTest {
         
         assertEquals(200, response.statusCode(), "Response status should be 200");
         
-        JsonNode jsonNode = objectMapper.readTree(response.body());
+        JsonNode jsonNode = JsonUtil.readTree(response.body());
         assertTrue(jsonNode.isArray(), "Response should be an array");
         assertEquals(2, jsonNode.size(), "Should return 2 alarms for NE001");
         
@@ -79,7 +76,7 @@ class MockHttpServerTest {
         
         assertEquals(200, response.statusCode(), "Response status should be 200");
         
-        JsonNode jsonNode = objectMapper.readTree(response.body());
+        JsonNode jsonNode = JsonUtil.readTree(response.body());
         assertTrue(jsonNode.isArray(), "Response should be an array");
         assertEquals(2, jsonNode.size(), "Should return 2 alarms");
         
@@ -105,7 +102,7 @@ class MockHttpServerTest {
         
         assertEquals(200, response.statusCode(), "Response status should be 200");
         
-        JsonNode jsonNode = objectMapper.readTree(response.body());
+        JsonNode jsonNode = JsonUtil.readTree(response.body());
         assertTrue(jsonNode.isArray(), "Response should be an array");
     }
     
@@ -137,7 +134,7 @@ class MockHttpServerTest {
         
         assertEquals(200, response.statusCode(), "Response status should be 200");
         
-        JsonNode jsonNode = objectMapper.readTree(response.body());
+        JsonNode jsonNode = JsonUtil.readTree(response.body());
         assertTrue(jsonNode.isArray(), "Response should be an array");
         assertEquals(1, jsonNode.size(), "Should return 1 KPI for NE001");
         
@@ -160,7 +157,7 @@ class MockHttpServerTest {
         
         assertEquals(200, response.statusCode(), "Response status should be 200");
         
-        JsonNode jsonNode = objectMapper.readTree(response.body());
+        JsonNode jsonNode = JsonUtil.readTree(response.body());
         assertTrue(jsonNode.isArray(), "Response should be an array");
         assertEquals(1, jsonNode.size(), "Should return 1 KPI2 for LTP001");
         
@@ -183,7 +180,7 @@ class MockHttpServerTest {
         
         assertEquals(200, response.statusCode(), "Response status should be 200");
         
-        JsonNode jsonNode = objectMapper.readTree(response.body());
+        JsonNode jsonNode = JsonUtil.readTree(response.body());
         assertTrue(jsonNode.isArray(), "Response should be an array");
         assertEquals(1, jsonNode.size(), "Should return 1 KPI");
         
@@ -209,7 +206,7 @@ class MockHttpServerTest {
         
         assertEquals(200, response.statusCode(), "Response status should be 200");
         
-        JsonNode jsonNode = objectMapper.readTree(response.body());
+        JsonNode jsonNode = JsonUtil.readTree(response.body());
         assertTrue(jsonNode.isArray(), "Response should be an array");
     }
     
@@ -242,7 +239,7 @@ class MockHttpServerTest {
         
         assertEquals(200, response.statusCode(), "Response status should be 200");
         
-        JsonNode jsonNode = objectMapper.readTree(response.body());
+        JsonNode jsonNode = JsonUtil.readTree(response.body());
         assertTrue(jsonNode.isArray(), "Response should be an array");
         assertEquals(1, jsonNode.size(), "Should return 1 alarm for NE002");
         

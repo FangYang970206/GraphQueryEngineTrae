@@ -1,7 +1,6 @@
 package com.federatedquery.sdk;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.federatedquery.adapter.GraphEntity;
 import com.federatedquery.adapter.QueryResult;
 import com.federatedquery.aggregator.*;
@@ -12,15 +11,19 @@ import com.federatedquery.connector.TuGraphConfig;
 import com.federatedquery.connector.TuGraphConnector;
 import com.federatedquery.connector.TuGraphConnectorImpl;
 import com.federatedquery.executor.ExecutionResult;
+import com.federatedquery.metadata.MetadataRegistry;
+import com.federatedquery.metadata.VirtualEdgeBinding;
 import com.federatedquery.parser.CypherParserFacade;
 import com.federatedquery.plan.ExecutionPlan;
 import com.federatedquery.plan.GlobalContext;
 import com.federatedquery.plan.PhysicalQuery;
 import com.federatedquery.plan.ExternalQuery;
 import com.federatedquery.rewriter.QueryRewriter;
+import com.federatedquery.util.JsonUtil;
 import com.federatedquery.executor.FederatedExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -29,16 +32,27 @@ import java.util.function.Consumer;
 @Component
 public class GraphQuerySDK {
     private static final Logger log = LoggerFactory.getLogger(GraphQuerySDK.class);
-    
-    private final CypherParserFacade parser;
-    private final QueryRewriter rewriter;
-    private final FederatedExecutor executor;
-    private final ResultStitcher stitcher;
-    private final GlobalSorter sorter;
-    private final UnionDeduplicator deduplicator;
-    private final ObjectMapper objectMapper;
-    private final TuGraphConnector tugraphConnector;
-    
+
+    @Autowired
+    private CypherParserFacade parser;
+    @Autowired
+    private QueryRewriter rewriter;
+    @Autowired
+    private FederatedExecutor executor;
+    @Autowired
+    private ResultStitcher stitcher;
+    @Autowired
+    private GlobalSorter sorter;
+    @Autowired
+    private UnionDeduplicator deduplicator;
+    @Autowired(required = false)
+    private MetadataRegistry registry;
+    @Autowired(required = false)
+    private TuGraphConnector tugraphConnector;
+
+    public GraphQuerySDK() {
+    }
+
     public GraphQuerySDK(CypherParserFacade parser,
                         QueryRewriter rewriter,
                         FederatedExecutor executor,
@@ -61,7 +75,7 @@ public class GraphQuerySDK {
         this.stitcher = stitcher;
         this.sorter = sorter;
         this.deduplicator = deduplicator;
-        this.objectMapper = new ObjectMapper();
+        this.registry = rewriter != null ? rewriter.getRegistry() : null;
         this.tugraphConnector = tugraphConnector;
     }
     
@@ -120,7 +134,7 @@ public class GraphQuerySDK {
     public String executeRaw(String cypher) {
         try {
             Program ast = parser.parseCached(cypher);
-            return objectMapper.writeValueAsString(executeQuery(ast).results());
+            return JsonUtil.toJson(executeQuery(ast).results());
         } catch (Exception e) {
             return buildErrorResponse(e);
         }
@@ -157,13 +171,13 @@ public class GraphQuerySDK {
 
     private String buildExecutionResponse(QueryExecutionOutcome outcome) throws JsonProcessingException {
         if (outcome.warnings().isEmpty()) {
-            return objectMapper.writeValueAsString(outcome.results());
+            return JsonUtil.toJson(outcome.results());
         }
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("results", outcome.results());
         response.put("warnings", outcome.warnings());
-        return objectMapper.writeValueAsString(response);
+        return JsonUtil.toJson(response);
     }
     
     private String resolveParameters(String cypher, Map<String, Object> params) {
@@ -1107,23 +1121,24 @@ public class GraphQuerySDK {
             return entities;
         }
         
-        String lastNodeId = (String) ((Map<String, Object>) lastElement.get("props")).get("id");
-        if (lastNodeId == null) {
+        VirtualEdgeBinding binding = getVirtualEdgeBinding(edgeType);
+        if (binding == null || binding.getIdMapping().isEmpty()) {
             return entities;
         }
-        
+
+        Map<String, Object> lastNodeProps = (Map<String, Object>) lastElement.get("props");
+        String lastNodeLabel = (String) lastElement.get("label");
+        if (lastNodeProps == null || lastNodeLabel == null) {
+            return entities;
+        }
+
         List<GraphEntity> filtered = new ArrayList<>();
         for (GraphEntity entity : entities) {
             if (entity.getSourceEdgeType() != null && !edgeType.equals(entity.getSourceEdgeType())) {
                 continue;
             }
-            
-            if (isVirtualEdge(edgeType)) {
-                Object parentResId = entity.getProperties().get("parentResId");
-                if (parentResId != null && parentResId.toString().equals(lastNodeId)) {
-                    filtered.add(entity);
-                }
-            } else {
+
+            if (!isVirtualEdge(edgeType) || matchesVirtualEdgeLink(entity, lastNodeProps, lastNodeLabel, binding)) {
                 filtered.add(entity);
             }
         }
@@ -1132,7 +1147,7 @@ public class GraphQuerySDK {
     }
     
     private boolean isVirtualEdge(String edgeType) {
-        return "NEHasKPI".equals(edgeType) || "NEHasAlarms".equals(edgeType) || "LTPHasKPI2".equals(edgeType);
+        return registry != null && edgeType != null && registry.isVirtualEdge(edgeType);
     }
     
     private List<GraphEntity> filterEntitiesByEdgeType(List<GraphEntity> entities, String edgeType) {
@@ -1158,21 +1173,59 @@ public class GraphQuerySDK {
     }
     
     private String getExpectedLabelForEdgeType(String edgeType) {
-        if (edgeType == null) {
+        return registry != null ? registry.getTargetLabelForEdge(edgeType) : null;
+    }
+
+    private VirtualEdgeBinding getVirtualEdgeBinding(String edgeType) {
+        if (registry == null || edgeType == null) {
             return null;
         }
-        switch (edgeType) {
-            case "NEHasLtps":
-                return "LTP";
-            case "NEHasKPI":
-                return "KPI";
-            case "NEHasAlarms":
-                return "ALARM";
-            case "LTPHasKPI2":
-                return "KPI2";
-            default:
-                return null;
+        return registry.getVirtualEdgeBinding(edgeType).orElse(null);
+    }
+
+    private boolean matchesVirtualEdgeLink(
+            GraphEntity entity,
+            Map<String, Object> sourceNodeProps,
+            String sourceNodeLabel,
+            VirtualEdgeBinding binding) {
+        for (Map.Entry<String, String> mapping : binding.getIdMapping().entrySet()) {
+            Object sourceValue = resolveMappedValue(sourceNodeProps, sourceNodeLabel, mapping.getKey(), true, null);
+            Object targetValue = resolveMappedValue(entity.getProperties(), entity.getLabel(), mapping.getValue(), false, entity.getId());
+            if (!Objects.equals(normalizeMappedValue(sourceValue), normalizeMappedValue(targetValue))) {
+                return false;
+            }
         }
+        return true;
+    }
+
+    private Object resolveMappedValue(
+            Map<String, Object> properties,
+            String label,
+            String mappingKey,
+            boolean useLabelMetadata,
+            String entityId) {
+        if (mappingKey == null) {
+            return null;
+        }
+        if ("_id".equals(mappingKey)) {
+            String idProperty = resolveIdProperty(label, useLabelMetadata);
+            Object idValue = properties != null ? properties.get(idProperty) : null;
+            return idValue != null ? idValue : entityId;
+        }
+        return properties != null ? properties.get(mappingKey) : null;
+    }
+
+    private String resolveIdProperty(String label, boolean useLabelMetadata) {
+        if (useLabelMetadata && registry != null && label != null) {
+            return registry.getLabel(label)
+                    .map(metadata -> metadata.getIdProperty() != null ? metadata.getIdProperty() : "id")
+                    .orElse("id");
+        }
+        return "id";
+    }
+
+    private String normalizeMappedValue(Object value) {
+        return value == null ? null : value.toString();
     }
     
     private List<GraphEntity> filterEntitiesByLabel(List<GraphEntity> entities, String expectedLabel) {
@@ -1369,7 +1422,7 @@ public class GraphQuerySDK {
             response.put("externalQueries", externalQueries);
             response.put("hasVirtualElements", plan.hasVirtualElements());
             
-            return objectMapper.writeValueAsString(response);
+            return JsonUtil.toJson(response);
         } catch (Exception e) {
             return buildErrorResponse(e);
         }
@@ -1400,7 +1453,7 @@ public class GraphQuerySDK {
             profileResponse.put("resultCount", results.size());
             profileResponse.put("results", results);
             
-            return objectMapper.writeValueAsString(profileResponse);
+            return JsonUtil.toJson(profileResponse);
         } catch (Exception e) {
             return buildErrorResponse(e);
         }
@@ -1442,10 +1495,10 @@ public class GraphQuerySDK {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("success", false);
         response.put("error", e.getMessage());
-        
+
         try {
-            return objectMapper.writeValueAsString(response);
-        } catch (JsonProcessingException ex) {
+            return JsonUtil.toJson(response);
+        } catch (IllegalStateException ex) {
             return "{\"success\":false,\"error\":\"" + e.getMessage().replace("\"", "\\\"") + "\"}";
         }
     }

@@ -3,6 +3,7 @@ package com.federatedquery.rewriter;
 import com.federatedquery.ast.*;
 import com.federatedquery.metadata.MetadataRegistry;
 import com.federatedquery.metadata.VirtualEdgeBinding;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -10,8 +11,12 @@ import java.util.List;
 
 @Component
 public class VirtualEdgeDetector {
-    private final MetadataRegistry registry;
-    
+    @Autowired
+    private MetadataRegistry registry;
+
+    public VirtualEdgeDetector() {
+    }
+
     public VirtualEdgeDetector(MetadataRegistry registry) {
         this.registry = registry;
     }
