@@ -5,6 +5,7 @@ import com.federatedquery.adapter.GraphEntity;
 import com.federatedquery.adapter.MockExternalAdapter;
 import com.federatedquery.metadata.*;
 import com.federatedquery.sdk.GraphQuerySDK;
+import com.federatedquery.testutil.GraphQueryMetaFactory;
 import com.federatedquery.util.JsonUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,7 +27,7 @@ class MissingCoverageE2ETest {
 
     @BeforeEach
     void setUp() {
-        FederatedE2ETestFixture fixture = new FederatedE2ETestFixture()
+        GraphQueryMetaFactory metaFactory = new GraphQueryMetaFactory()
                 .registerDataSource("tugraph", DataSourceType.TUGRAPH_BOLT)
                 .registerDataSource("kpi-service", DataSourceType.REST_API)
                 .registerDataSource("alarm-service", DataSourceType.REST_API)
@@ -38,11 +39,11 @@ class MissingCoverageE2ETest {
                 .registerVirtualEdge("NEHasKPI", "kpi-service", "getKPIByNeIds", binding -> binding.setLastHopOnly(true))
                 .registerVirtualEdge("NEHasAlarms", "alarm-service", "getAlarmsByNeIds", binding -> binding.setLastHopOnly(true));
 
-        registry = fixture.registry();
-        tugraphAdapter = fixture.createAdapter("tugraph");
-        kpiAdapter = fixture.createAdapter("kpi-service");
-        alarmAdapter = fixture.createAdapter("alarm-service");
-        sdk = fixture.createSdk();
+        registry = metaFactory.registry();
+        tugraphAdapter = metaFactory.createAdapter("tugraph");
+        kpiAdapter = metaFactory.createAdapter("kpi-service");
+        alarmAdapter = metaFactory.createAdapter("alarm-service");
+        sdk = metaFactory.createSdk();
     }
 
     @Nested

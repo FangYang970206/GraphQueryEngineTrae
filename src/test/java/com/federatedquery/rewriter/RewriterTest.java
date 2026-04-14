@@ -1,6 +1,7 @@
 package com.federatedquery.rewriter;
 
 import com.federatedquery.ast.*;
+import com.federatedquery.testutil.GraphQueryMetaFactory;
 import com.federatedquery.metadata.*;
 import com.federatedquery.parser.CypherASTVisitor;
 import com.federatedquery.parser.CypherParserFacade;
@@ -12,7 +13,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -31,41 +31,12 @@ class RewriterTest {
     
     @BeforeEach
     void setUp() {
+        GraphQueryMetaFactory.populateStandardMetadata(registry);
+
         detector = new VirtualEdgeDetector(registry);
         whereConditionPushdown = new WhereConditionPushdown(registry);
         rewriter = new QueryRewriter(registry, detector, whereConditionPushdown);
         parser = new CypherParserFacade(astVisitor);
-
-        DataSourceMetadata tugraph = new DataSourceMetadata();
-        tugraph.setName("tugraph");
-        tugraph.setType(DataSourceType.TUGRAPH_BOLT);
-        tugraph.setEndpoint("bolt://localhost:7687");
-        registry.registerDataSource(tugraph);
-        
-        DataSourceMetadata kpiService = new DataSourceMetadata();
-        kpiService.setName("kpi-service");
-        kpiService.setType(DataSourceType.REST_API);
-        kpiService.setEndpoint("http://kpi-service:8080");
-        registry.registerDataSource(kpiService);
-        
-        VirtualEdgeBinding neHasKpi = new VirtualEdgeBinding();
-        neHasKpi.setEdgeType("NEHasKPI");
-        neHasKpi.setTargetDataSource("kpi-service");
-        neHasKpi.setOperatorName("getKPIByNeIds");
-        neHasKpi.setLastHopOnly(true);
-        registry.registerVirtualEdge(neHasKpi);
-        
-        VirtualEdgeBinding neHasAlarms = new VirtualEdgeBinding();
-        neHasAlarms.setEdgeType("NEHasAlarms");
-        neHasAlarms.setTargetDataSource("alarm-service");
-        neHasAlarms.setOperatorName("getAlarmsByNeIds");
-        neHasAlarms.setLastHopOnly(true);
-        registry.registerVirtualEdge(neHasAlarms);
-        
-        LabelMetadata neLabel = new LabelMetadata();
-        neLabel.setLabel("NetworkElement");
-        neLabel.setVirtual(false);
-        registry.registerLabel(neLabel);
     }
     
     @Test
@@ -174,10 +145,8 @@ class RewriterTest {
     void skipUpdatingClause() {
         String cypher = "CREATE (n:NetworkElement {name:'NE001'})";
         Program program = parser.parse(cypher);
-        // 当前实现允许解析但不执行更新操作
         ExecutionPlan plan = rewriter.rewrite(program);
         assertNotNull(plan);
-        // 更新语句不会产生物理查询
         assertTrue(plan.getPhysicalQueries().isEmpty(), "CREATE语句不应产生物理查询");
     }
     

@@ -5,6 +5,7 @@ import com.federatedquery.adapter.*;
 import com.federatedquery.executor.FederatedExecutor;
 import com.federatedquery.metadata.*;
 import com.federatedquery.sdk.GraphQuerySDK;
+import com.federatedquery.testutil.GraphQueryMetaFactory;
 import com.federatedquery.util.JsonUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,7 +27,7 @@ class E2ETest {
     
     @BeforeEach
     void setUp() {
-        FederatedE2ETestFixture fixture = new FederatedE2ETestFixture()
+        GraphQueryMetaFactory metaFactory = new GraphQueryMetaFactory()
                 .registerDataSource("tugraph", DataSourceType.TUGRAPH_BOLT, "bolt://localhost:7687")
                 .registerDataSource("kpi-service", DataSourceType.REST_API, "http://kpi-service:8080")
                 .registerDataSource("alarm-service", DataSourceType.REST_API, "http://alarm-service:8080")
@@ -53,12 +54,12 @@ class E2ETest {
                 .registerLabel("Person", false, "tugraph")
                 .registerLabel("Card", true, "card-service");
 
-        registry = fixture.registry();
-        kpiAdapter = fixture.createAdapter("kpi-service");
-        alarmAdapter = fixture.createAdapter("alarm-service");
-        cardAdapter = fixture.createAdapter("card-service");
-        tugraphAdapter = fixture.createAdapter("tugraph");
-        sdk = fixture.createSdk();
+        registry = metaFactory.registry();
+        kpiAdapter = metaFactory.createAdapter("kpi-service");
+        alarmAdapter = metaFactory.createAdapter("alarm-service");
+        cardAdapter = metaFactory.createAdapter("card-service");
+        tugraphAdapter = metaFactory.createAdapter("tugraph");
+        sdk = metaFactory.createSdk();
     }
     
     @Test

@@ -13,6 +13,7 @@ import com.federatedquery.rewriter.QueryRewriter;
 import com.federatedquery.rewriter.VirtualEdgeDetector;
 import com.federatedquery.reliability.WhereConditionPushdown;
 import com.federatedquery.sdk.GraphQuerySDK;
+import com.federatedquery.testutil.GraphQueryMetaFactory;
 import com.federatedquery.util.JsonUtil;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.DisabledIf;
@@ -179,82 +180,8 @@ class VirtualGraphCaseE2ETest {
     
     @BeforeEach
     void setUp() {
-        registry = new MetadataRegistryImpl();
-        
-        DataSourceMetadata tugraph = new DataSourceMetadata();
-        tugraph.setName("tugraph");
-        tugraph.setType(DataSourceType.TUGRAPH_BOLT);
-        tugraph.setEndpoint("bolt://127.0.0.1:7687");
-        registry.registerDataSource(tugraph);
-        
-        DataSourceMetadata druidService = new DataSourceMetadata();
-        druidService.setName("druid-service");
-        druidService.setType(DataSourceType.REST_API);
-        druidService.setEndpoint("http://localhost:18080");
-        registry.registerDataSource(druidService);
-        
-        DataSourceMetadata zenithService = new DataSourceMetadata();
-        zenithService.setName("zenith-service");
-        zenithService.setType(DataSourceType.REST_API);
-        zenithService.setEndpoint("http://localhost:18080");
-        registry.registerDataSource(zenithService);
-        
-        VirtualEdgeBinding neHasKpi = new VirtualEdgeBinding();
-        neHasKpi.setEdgeType("NEHasKPI");
-        neHasKpi.setTargetDataSource("druid-service");
-        neHasKpi.setTargetLabel("KPI");
-        neHasKpi.setOperatorName("queryKpiByParentResId");
-        neHasKpi.getIdMapping().put("resId", "parentResId");
-        neHasKpi.setLastHopOnly(true);
-        registry.registerVirtualEdge(neHasKpi);
-        
-        VirtualEdgeBinding neHasAlarms = new VirtualEdgeBinding();
-        neHasAlarms.setEdgeType("NEHasAlarms");
-        neHasAlarms.setTargetDataSource("zenith-service");
-        neHasAlarms.setTargetLabel("ALARM");
-        neHasAlarms.setOperatorName("queryAlarmsByMedn");
-        neHasAlarms.getIdMapping().put("DN", "MEDN");
-        neHasAlarms.setLastHopOnly(true);
-        registry.registerVirtualEdge(neHasAlarms);
-        
-        VirtualEdgeBinding ltpHasKpi2 = new VirtualEdgeBinding();
-        ltpHasKpi2.setEdgeType("LTPHasKPI2");
-        ltpHasKpi2.setTargetDataSource("druid-service");
-        ltpHasKpi2.setTargetLabel("KPI2");
-        ltpHasKpi2.setOperatorName("queryKpi2ByParentResId");
-        ltpHasKpi2.getIdMapping().put("resId", "parentResId");
-        ltpHasKpi2.setLastHopOnly(true);
-        registry.registerVirtualEdge(ltpHasKpi2);
-        
-        LabelMetadata neLabel = new LabelMetadata();
-        neLabel.setLabel("NetworkElement");
-        neLabel.setVirtual(false);
-        neLabel.setDataSource("tugraph");
-        registry.registerLabel(neLabel);
-        
-        LabelMetadata ltpLabel = new LabelMetadata();
-        ltpLabel.setLabel("LTP");
-        ltpLabel.setVirtual(false);
-        ltpLabel.setDataSource("tugraph");
-        registry.registerLabel(ltpLabel);
-        
-        LabelMetadata kpiLabel = new LabelMetadata();
-        kpiLabel.setLabel("KPI");
-        kpiLabel.setVirtual(true);
-        kpiLabel.setDataSource("druid-service");
-        registry.registerLabel(kpiLabel);
-        
-        LabelMetadata kpi2Label = new LabelMetadata();
-        kpi2Label.setLabel("KPI2");
-        kpi2Label.setVirtual(true);
-        kpi2Label.setDataSource("druid-service");
-        registry.registerLabel(kpi2Label);
-        
-        LabelMetadata alarmLabel = new LabelMetadata();
-        alarmLabel.setLabel("ALARM");
-        alarmLabel.setVirtual(true);
-        alarmLabel.setDataSource("zenith-service");
-        registry.registerLabel(alarmLabel);
+        GraphQueryMetaFactory metaFactory = GraphQueryMetaFactory.createWithDruidZenith();
+        registry = metaFactory.registry();
         
         TuGraphAdapterImpl tugraphAdapter = new TuGraphAdapterImpl(connector, "tugraph");
         
@@ -491,7 +418,6 @@ class VirtualGraphCaseE2ETest {
         MockExternalAdapter adapter = new MockExternalAdapter();
         adapter.setDataSourceName("druid-service");
         
-        // KPI operator - only for NEHasKPI virtual edge
         adapter.registerResponse("queryKpiByParentResId", MockExternalAdapter.MockResponse.create()
             .generator(query -> {
                 List<GraphEntity> entities = new ArrayList<>();
@@ -534,7 +460,6 @@ class VirtualGraphCaseE2ETest {
                 return entities;
             }));
         
-        // KPI2 operator - only for LTPHasKPI2 virtual edge
         adapter.registerResponse("queryKpi2ByParentResId", MockExternalAdapter.MockResponse.create()
             .generator(query -> {
                 List<GraphEntity> entities = new ArrayList<>();

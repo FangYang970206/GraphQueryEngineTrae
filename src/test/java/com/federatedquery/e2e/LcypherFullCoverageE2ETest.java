@@ -3,20 +3,8 @@ package com.federatedquery.e2e;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.federatedquery.adapter.GraphEntity;
 import com.federatedquery.adapter.MockExternalAdapter;
-import com.federatedquery.aggregator.UnionDeduplicator;
-import com.federatedquery.executor.FederatedExecutor;
-import com.federatedquery.metadata.DataSourceMetadata;
-import com.federatedquery.metadata.DataSourceType;
-import com.federatedquery.metadata.LabelMetadata;
-import com.federatedquery.metadata.MetadataRegistry;
-import com.federatedquery.metadata.MetadataRegistryImpl;
-import com.federatedquery.metadata.VirtualEdgeBinding;
-import com.federatedquery.parser.CypherASTVisitor;
-import com.federatedquery.parser.CypherParserFacade;
-import com.federatedquery.reliability.WhereConditionPushdown;
-import com.federatedquery.rewriter.QueryRewriter;
-import com.federatedquery.rewriter.VirtualEdgeDetector;
 import com.federatedquery.sdk.GraphQuerySDK;
+import com.federatedquery.testutil.GraphQueryMetaFactory;
 import com.federatedquery.util.JsonUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,71 +27,13 @@ class LcypherFullCoverageE2ETest {
 
     @BeforeEach
     void setUp() {
-        MetadataRegistry registry = new MetadataRegistryImpl();
+        GraphQueryMetaFactory metaFactory = GraphQueryMetaFactory.createStandard();
 
-        DataSourceMetadata tugraph = new DataSourceMetadata();
-        tugraph.setName("tugraph");
-        tugraph.setType(DataSourceType.TUGRAPH_BOLT);
-        registry.registerDataSource(tugraph);
+        tugraphAdapter = metaFactory.createAdapter("tugraph");
+        kpiAdapter = metaFactory.createAdapter("kpi-service");
+        alarmAdapter = metaFactory.createAdapter("alarm-service");
 
-        DataSourceMetadata kpiService = new DataSourceMetadata();
-        kpiService.setName("kpi-service");
-        kpiService.setType(DataSourceType.REST_API);
-        registry.registerDataSource(kpiService);
-
-        DataSourceMetadata alarmService = new DataSourceMetadata();
-        alarmService.setName("alarm-service");
-        alarmService.setType(DataSourceType.REST_API);
-        registry.registerDataSource(alarmService);
-
-        LabelMetadata neLabel = new LabelMetadata();
-        neLabel.setLabel("NetworkElement");
-        neLabel.setVirtual(false);
-        neLabel.setDataSource("tugraph");
-        registry.registerLabel(neLabel);
-
-        LabelMetadata kpiLabel = new LabelMetadata();
-        kpiLabel.setLabel("KPI");
-        kpiLabel.setVirtual(true);
-        kpiLabel.setDataSource("kpi-service");
-        registry.registerLabel(kpiLabel);
-
-        LabelMetadata alarmLabel = new LabelMetadata();
-        alarmLabel.setLabel("Alarm");
-        alarmLabel.setVirtual(true);
-        alarmLabel.setDataSource("alarm-service");
-        registry.registerLabel(alarmLabel);
-
-        VirtualEdgeBinding neHasKpi = new VirtualEdgeBinding();
-        neHasKpi.setEdgeType("NEHasKPI");
-        neHasKpi.setTargetDataSource("kpi-service");
-        neHasKpi.setOperatorName("getKPIByNeIds");
-        neHasKpi.setLastHopOnly(true);
-        registry.registerVirtualEdge(neHasKpi);
-
-        VirtualEdgeBinding neHasAlarms = new VirtualEdgeBinding();
-        neHasAlarms.setEdgeType("NEHasAlarms");
-        neHasAlarms.setTargetDataSource("alarm-service");
-        neHasAlarms.setOperatorName("getAlarmsByNeIds");
-        neHasAlarms.setLastHopOnly(true);
-        registry.registerVirtualEdge(neHasAlarms);
-
-        tugraphAdapter = new MockExternalAdapter();
-        tugraphAdapter.setDataSourceName("tugraph");
-        kpiAdapter = new MockExternalAdapter();
-        kpiAdapter.setDataSourceName("kpi-service");
-        alarmAdapter = new MockExternalAdapter();
-        alarmAdapter.setDataSourceName("alarm-service");
-
-        CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor());
-        VirtualEdgeDetector detector = new VirtualEdgeDetector(registry);
-        QueryRewriter rewriter = new QueryRewriter(registry, detector, new WhereConditionPushdown(registry));
-        FederatedExecutor executor = new FederatedExecutor(registry);
-        executor.registerAdapter("tugraph", tugraphAdapter);
-        executor.registerAdapter("kpi-service", kpiAdapter);
-        executor.registerAdapter("alarm-service", alarmAdapter);
-
-        sdk = new GraphQuerySDK(parser, rewriter, executor, new UnionDeduplicator());
+        sdk = metaFactory.createSdk();
     }
 
     @Test
