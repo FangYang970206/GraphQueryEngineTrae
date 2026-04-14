@@ -1,8 +1,6 @@
 package com.federatedquery.e2e;
 
 import com.federatedquery.adapter.MockExternalAdapter;
-import com.federatedquery.aggregator.GlobalSorter;
-import com.federatedquery.aggregator.ResultStitcher;
 import com.federatedquery.aggregator.UnionDeduplicator;
 import com.federatedquery.executor.FederatedExecutor;
 import com.federatedquery.metadata.DataSourceMetadata;
@@ -85,8 +83,6 @@ final class FederatedE2ETestFixture {
                 parser,
                 rewriter,
                 executor,
-                new ResultStitcher(),
-                new GlobalSorter(),
                 new UnionDeduplicator());
     }
 }

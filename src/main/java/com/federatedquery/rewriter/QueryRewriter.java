@@ -20,9 +20,6 @@ public class QueryRewriter {
     @Autowired
     private WhereConditionPushdown whereConditionPushdown;
 
-    public QueryRewriter() {
-    }
-
     public QueryRewriter(MetadataRegistry registry, 
                         VirtualEdgeDetector detector,
                         WhereConditionPushdown whereConditionPushdown) {

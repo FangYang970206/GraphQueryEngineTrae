@@ -40,40 +40,27 @@ public class GraphQuerySDK {
     @Autowired
     private FederatedExecutor executor;
     @Autowired
-    private ResultStitcher stitcher;
-    @Autowired
-    private GlobalSorter sorter;
-    @Autowired
     private UnionDeduplicator deduplicator;
     @Autowired(required = false)
     private MetadataRegistry registry;
     @Autowired(required = false)
     private TuGraphConnector tugraphConnector;
 
-    public GraphQuerySDK() {
-    }
-
     public GraphQuerySDK(CypherParserFacade parser,
                         QueryRewriter rewriter,
                         FederatedExecutor executor,
-                        ResultStitcher stitcher,
-                        GlobalSorter sorter,
                         UnionDeduplicator deduplicator) {
-        this(parser, rewriter, executor, stitcher, sorter, deduplicator, null);
+        this(parser, rewriter, executor, deduplicator, null);
     }
     
     public GraphQuerySDK(CypherParserFacade parser,
                         QueryRewriter rewriter,
                         FederatedExecutor executor,
-                        ResultStitcher stitcher,
-                        GlobalSorter sorter,
                         UnionDeduplicator deduplicator,
                         TuGraphConnector tugraphConnector) {
         this.parser = parser;
         this.rewriter = rewriter;
         this.executor = executor;
-        this.stitcher = stitcher;
-        this.sorter = sorter;
         this.deduplicator = deduplicator;
         this.registry = rewriter != null ? rewriter.getRegistry() : null;
         this.tugraphConnector = tugraphConnector;

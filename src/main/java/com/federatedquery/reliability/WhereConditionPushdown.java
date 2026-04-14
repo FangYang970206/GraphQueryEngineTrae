@@ -16,9 +16,6 @@ public class WhereConditionPushdown {
     @Autowired
     private MetadataRegistry registry;
 
-    public WhereConditionPushdown() {
-    }
-
     public WhereConditionPushdown(MetadataRegistry registry) {
         this.registry = registry;
     }

@@ -3,8 +3,6 @@ package com.federatedquery.e2e;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.federatedquery.adapter.GraphEntity;
 import com.federatedquery.adapter.MockExternalAdapter;
-import com.federatedquery.aggregator.GlobalSorter;
-import com.federatedquery.aggregator.ResultStitcher;
 import com.federatedquery.aggregator.UnionDeduplicator;
 import com.federatedquery.executor.FederatedExecutor;
 import com.federatedquery.metadata.DataSourceMetadata;
@@ -105,7 +103,7 @@ class LcypherFullCoverageE2ETest {
         executor.registerAdapter("kpi-service", kpiAdapter);
         executor.registerAdapter("alarm-service", alarmAdapter);
 
-        sdk = new GraphQuerySDK(parser, rewriter, executor, new ResultStitcher(), new GlobalSorter(), new UnionDeduplicator());
+        sdk = new GraphQuerySDK(parser, rewriter, executor, new UnionDeduplicator());
     }
 
     @Test

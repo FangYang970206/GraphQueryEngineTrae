@@ -269,11 +269,9 @@ class VirtualGraphCaseE2ETest {
         executor.registerAdapter("tugraph", tugraphAdapter);
         executor.registerAdapter("druid-service", druidAdapter);
         executor.registerAdapter("zenith-service", zenithAdapter);
-        ResultStitcher stitcher = new ResultStitcher();
-        GlobalSorter sorter = new GlobalSorter();
         UnionDeduplicator deduplicator = new UnionDeduplicator();
         
-        sdk = new GraphQuerySDK(parser, rewriter, executor, stitcher, sorter, deduplicator, connector);
+        sdk = new GraphQuerySDK(parser, rewriter, executor, deduplicator, connector);
     }
     
     @Test

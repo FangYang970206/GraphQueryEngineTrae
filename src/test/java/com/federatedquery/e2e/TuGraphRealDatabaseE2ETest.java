@@ -188,11 +188,9 @@ class TuGraphRealDatabaseE2ETest {
         executor.registerAdapter("kpi-service", kpiAdapter);
         executor.registerAdapter("alarm-service", alarmAdapter);
         executor.registerAdapter("tugraph", tugraphAdapter);
-        ResultStitcher stitcher = new ResultStitcher();
-        GlobalSorter sorter = new GlobalSorter();
         UnionDeduplicator deduplicator = new UnionDeduplicator();
         
-        sdk = new GraphQuerySDK(parser, rewriter, executor, stitcher, sorter, deduplicator);
+        sdk = new GraphQuerySDK(parser, rewriter, executor, deduplicator);
     }
     
     @Test
@@ -296,11 +294,9 @@ class TuGraphRealDatabaseE2ETest {
         VirtualEdgeDetector detector = new VirtualEdgeDetector(registry);
         WhereConditionPushdown whereConditionPushdown = new WhereConditionPushdown(registry);
         QueryRewriter rewriter = new QueryRewriter(registry, detector, whereConditionPushdown);
-        ResultStitcher stitcher = new ResultStitcher();
-        GlobalSorter sorter = new GlobalSorter();
         UnionDeduplicator deduplicator = new UnionDeduplicator();
         
-        sdk = new GraphQuerySDK(parser, rewriter, executor, stitcher, sorter, deduplicator);
+        sdk = new GraphQuerySDK(parser, rewriter, executor, deduplicator);
         
         String cypher = "MATCH (n:NetworkElement) RETURN n LIMIT 10";
         
@@ -327,12 +323,10 @@ class TuGraphRealDatabaseE2ETest {
         WhereConditionPushdown whereConditionPushdown = new WhereConditionPushdown(registry);
         QueryRewriter rewriter = new QueryRewriter(registry, detector, whereConditionPushdown);
         FederatedExecutor executor = new FederatedExecutor(registry);
-        ResultStitcher stitcher = new ResultStitcher();
-        GlobalSorter sorter = new GlobalSorter();
         UnionDeduplicator deduplicator = new UnionDeduplicator();
         
         TuGraphConnector sdkConnector = new TuGraphConnectorImpl(TuGraphConfig.defaultConfig());
-        sdk = new GraphQuerySDK(parser, rewriter, executor, stitcher, sorter, deduplicator, sdkConnector);
+        sdk = new GraphQuerySDK(parser, rewriter, executor, deduplicator, sdkConnector);
         
         String cypher = "MATCH (n:NetworkElement) RETURN n ORDER BY n.name LIMIT 5";
         
@@ -353,12 +347,10 @@ class TuGraphRealDatabaseE2ETest {
         WhereConditionPushdown whereConditionPushdown = new WhereConditionPushdown(registry);
         QueryRewriter rewriter = new QueryRewriter(registry, detector, whereConditionPushdown);
         FederatedExecutor executor = new FederatedExecutor(registry);
-        ResultStitcher stitcher = new ResultStitcher();
-        GlobalSorter sorter = new GlobalSorter();
         UnionDeduplicator deduplicator = new UnionDeduplicator();
         
         TuGraphConnector sdkConnector = new TuGraphConnectorImpl(TuGraphConfig.defaultConfig());
-        sdk = new GraphQuerySDK(parser, rewriter, executor, stitcher, sorter, deduplicator, sdkConnector);
+        sdk = new GraphQuerySDK(parser, rewriter, executor, deduplicator, sdkConnector);
         
         String cypher = "MATCH (n:NetworkElement) WHERE n.name = $name RETURN n";
         

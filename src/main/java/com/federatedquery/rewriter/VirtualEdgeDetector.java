@@ -14,9 +14,6 @@ public class VirtualEdgeDetector {
     @Autowired
     private MetadataRegistry registry;
 
-    public VirtualEdgeDetector() {
-    }
-
     public VirtualEdgeDetector(MetadataRegistry registry) {
         this.registry = registry;
     }
