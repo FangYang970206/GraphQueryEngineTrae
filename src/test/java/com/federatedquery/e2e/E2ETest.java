@@ -239,6 +239,8 @@ class E2ETest {
         
         cardAdapter.registerResponse("getCardsByPersonIds", MockExternalAdapter.MockResponse.create()
                 .addEntity(cardEntity));
+        cardAdapter.registerResponse("getByLabel", MockExternalAdapter.MockResponse.create()
+                .addEntity(cardEntity));
         
         String cypher = "MATCH path = (p:Person)-[r1:HAS_CHILD]->(p1)-[r2:HAS_CHILD]->(p2)-[r3:BORN_IN]->(c:Card) " +
                        "RETURN path";
@@ -397,6 +399,8 @@ class E2ETest {
         neEntity.setVariableName("ne");
         
         cardAdapter.registerResponse("getCardByCardId", MockExternalAdapter.MockResponse.create()
+                .addEntity(card));
+        cardAdapter.registerResponse("getByLabel", MockExternalAdapter.MockResponse.create()
                 .addEntity(card));
         
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()

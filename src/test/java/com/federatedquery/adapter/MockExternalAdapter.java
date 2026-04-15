@@ -1,5 +1,7 @@
 package com.federatedquery.adapter;
 
+import com.federatedquery.exception.ErrorCode;
+import com.federatedquery.exception.GraphQueryException;
 import com.federatedquery.plan.ExternalQuery;
 
 import java.util.*;
@@ -64,15 +66,13 @@ public class MockExternalAdapter implements DataSourceAdapter {
         MockResponse mock = responses.get(query.getOperator());
         
         if (mock == null) {
-            result.setError("No mock response registered for operator: " + query.getOperator());
-            result.setExecutionTimeMs(System.currentTimeMillis() - startTime);
-            return result;
+            throw new GraphQueryException(ErrorCode.EXTERNAL_DATASOURCE_ERROR, 
+                    "No mock response registered for operator: " + query.getOperator());
         }
         
         if (mock.isError()) {
-            result.setError(mock.getErrorMessage());
-            result.setExecutionTimeMs(System.currentTimeMillis() - startTime);
-            return result;
+            throw new GraphQueryException(ErrorCode.EXTERNAL_DATASOURCE_ERROR, 
+                    mock.getErrorMessage());
         }
         
         List<GraphEntity> entities = mock.execute(query);
@@ -106,12 +106,7 @@ public class MockExternalAdapter implements DataSourceAdapter {
                 result.addRow(row);
             }
         }
-        result.setSuccess(true);
         result.setExecutionTimeMs(System.currentTimeMillis() - startTime);
-        
-        if (mock.getWarning() != null) {
-            result.addWarning("MOCK_WARNING", mock.getWarning());
-        }
         
         return result;
     }

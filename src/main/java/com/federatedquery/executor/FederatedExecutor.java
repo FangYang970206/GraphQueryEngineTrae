@@ -1,6 +1,8 @@
 package com.federatedquery.executor;
 
 import com.federatedquery.adapter.*;
+import com.federatedquery.exception.ErrorCode;
+import com.federatedquery.exception.GraphQueryException;
 import com.federatedquery.metadata.DataSourceMetadata;
 import com.federatedquery.metadata.MetadataRegistry;
 import com.federatedquery.plan.*;
@@ -127,9 +129,8 @@ public class FederatedExecutor {
                             .collect(Collectors.toList());
                     
                     for (ExternalQuery query : notReadyQueries) {
-                        log.warn("External query {} is not ready to execute - no input IDs available", query.getId());
-                        result.addExternalResult(QueryResult.partial(new ArrayList<>(), 
-                                "No input IDs available from physical query"));
+                        log.debug("External query {} is not ready to execute - no input IDs available, returning empty result", query.getId());
+                        result.addExternalResult(new QueryResult());
                     }
                     
                     List<ExternalQuery> directDependentQueries = readyQueries.stream()
@@ -279,7 +280,6 @@ public class FederatedExecutor {
     }
 
     private ExecutionResult markExecutionSuccess(ExecutionResult result) {
-        result.setSuccess(true);
         result.setExecutionTimeMs(System.currentTimeMillis() - result.getStartTime());
         return result;
     }
@@ -338,16 +338,20 @@ public class FederatedExecutor {
         }
         
         if (adapter == null) {
-            return CompletableFuture.completedFuture(
-                    QueryResult.error("No TuGraph adapter registered"));
+            log.error("Physical query failed [queryId={}]: No TuGraph adapter registered", query.getId());
+            return CompletableFuture.failedFuture(
+                    new GraphQueryException(ErrorCode.DATASOURCE_CONNECTION_ERROR, 
+                            "No TuGraph adapter registered"));
         }
         
         DataSourceAdapter finalAdapter = adapter;
         return runOnExecutor(() -> finalAdapter.execute(convertToExternalQuery(query)))
                 .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                 .exceptionally(e -> {
-                    log.error("Physical query timeout after {}ms: {}", timeoutMs, query.getCypher());
-                    return QueryResult.error("Query timeout after " + timeoutMs + "ms: " + e.getMessage());
+                    log.error("Physical query timeout after {}ms [queryId={}]: {}", 
+                            timeoutMs, query.getId(), query.getCypher());
+                    throw new GraphQueryException(ErrorCode.DATASOURCE_QUERY_ERROR, 
+                            "Physical query timeout after " + timeoutMs + "ms", e);
                 });
     }
     
@@ -355,10 +359,11 @@ public class FederatedExecutor {
         DataSourceAdapter adapter = getAdapter(query.getDataSource());
         
         if (adapter == null) {
-            log.warn("No adapter found for data source: {}", query.getDataSource());
-            return CompletableFuture.completedFuture(
-                    QueryResult.partial(new ArrayList<>(), 
-                            "External source " + query.getDataSource() + " unavailable"));
+            log.error("External query failed [queryId={}] [dataSource={}]: No adapter found", 
+                    query.getId(), query.getDataSource());
+            return CompletableFuture.failedFuture(
+                    new GraphQueryException(ErrorCode.DATASOURCE_CONNECTION_ERROR, 
+                            "No adapter found for data source: " + query.getDataSource()));
         }
         
         int maxRetries = getMaxRetries(query.getDataSource());
@@ -379,10 +384,10 @@ public class FederatedExecutor {
                                 attempt + 1, maxRetries + 1, query.getDataSource());
                         return null;
                     }
-                    log.error("External query failed after {} attempts for data source: {}", 
-                            maxRetries + 1, query.getDataSource());
-                    return QueryResult.error("External query failed after " + (maxRetries + 1) + 
-                            " attempts: " + e.getMessage());
+                    log.error("External query failed after {} attempts [queryId={}] [dataSource={}]", 
+                            maxRetries + 1, query.getId(), query.getDataSource());
+                    throw new GraphQueryException(ErrorCode.EXTERNAL_DATASOURCE_ERROR, 
+                            "External query failed after " + (maxRetries + 1) + " attempts", e);
                 })
                 .thenCompose(result -> {
                     if (result == null && attempt < maxRetries) {
@@ -390,7 +395,8 @@ public class FederatedExecutor {
                             Thread.sleep(RETRY_DELAY_MS * (attempt + 1));
                         } catch (InterruptedException ie) {
                             Thread.currentThread().interrupt();
-                            return CompletableFuture.completedFuture(QueryResult.error("Retry interrupted"));
+                            throw new GraphQueryException(ErrorCode.EXTERNAL_DATASOURCE_ERROR, 
+                                    "Retry interrupted", ie);
                         }
                         return executeWithRetryInternal(adapter, query, maxRetries, attempt + 1);
                     }
@@ -413,8 +419,11 @@ public class FederatedExecutor {
         DataSourceAdapter adapter = getAdapter(batch.getDataSource());
         
         if (adapter == null) {
-            return CompletableFuture.completedFuture(
-                    QueryResult.error("No adapter for data source: " + batch.getDataSource()));
+            log.error("Batch query failed [batchId={}] [dataSource={}]: No adapter found", 
+                    batch.getId(), batch.getDataSource());
+            return CompletableFuture.failedFuture(
+                    new GraphQueryException(ErrorCode.DATASOURCE_CONNECTION_ERROR, 
+                            "No adapter for data source: " + batch.getDataSource()));
         }
         
         ExternalQuery combinedQuery = new ExternalQuery();
@@ -431,12 +440,12 @@ public class FederatedExecutor {
         return runOnExecutor(() -> adapter.execute(combinedQuery))
                 .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                 .exceptionally(e -> {
-                    log.error("Batch query timeout after {}ms for data source: {}", timeoutMs, batch.getDataSource());
-                    return QueryResult.error("Batch query timeout after " + timeoutMs + "ms: " + e.getMessage());
+                    log.error("Batch query timeout after {}ms [batchId={}] [dataSource={}]", 
+                            timeoutMs, batch.getId(), batch.getDataSource());
+                    throw new GraphQueryException(ErrorCode.BATCH_EXECUTION_ERROR, 
+                            "Batch query timeout after " + timeoutMs + "ms", e);
                 })
-                .thenApply(result -> {
-                    return result;
-                });
+                .thenApply(result -> result);
     }
 
     private QueryResult normalizeExternalResult(ExternalQuery query, QueryResult result) {
@@ -578,7 +587,6 @@ public class FederatedExecutor {
         return CompletableFuture.allOf(subFutures.toArray(new CompletableFuture[0]))
                 .thenApply(v -> {
                     QueryResult combined = new QueryResult();
-                    combined.setSuccess(true);
                     List<ExecutionResult> subResults = new ArrayList<>();
                     
                     for (CompletableFuture<ExecutionResult> future : subFutures) {
@@ -596,8 +604,19 @@ public class FederatedExecutor {
                             for (QueryResult r : subResult.getExternalResults()) {
                                 combined.getEntities().addAll(r.getEntities());
                             }
-                        } catch (Exception e) {
-                            log.error("Failed to get union sub-result", e);
+                        } catch (ExecutionException e) {
+                            Throwable cause = e.getCause();
+                            if (cause instanceof GraphQueryException) {
+                                throw (GraphQueryException) cause;
+                            }
+                            log.error("Union sub-query failed [unionId={}]: {}", union.getId(), e.getMessage());
+                            throw new GraphQueryException(ErrorCode.UNION_EXECUTION_ERROR, 
+                                    "Union sub-query failed", cause);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            log.error("Union sub-query interrupted [unionId={}]", union.getId());
+                            throw new GraphQueryException(ErrorCode.UNION_EXECUTION_ERROR, 
+                                    "Union sub-query interrupted", e);
                         }
                     }
                     combined.setData(subResults);

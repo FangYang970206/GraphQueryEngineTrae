@@ -1,6 +1,8 @@
 package com.federatedquery.adapter;
 
 import com.federatedquery.connector.TuGraphConnector;
+import com.federatedquery.exception.ErrorCode;
+import com.federatedquery.exception.GraphQueryException;
 import com.federatedquery.plan.ExternalQuery;
 import org.neo4j.driver.Record;
 import org.slf4j.Logger;
@@ -57,12 +59,12 @@ public class TuGraphAdapterImpl implements DataSourceAdapter {
             
             return result;
             
+        } catch (GraphQueryException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Failed to execute TuGraph query: {}", query.getOperator(), e);
-            QueryResult result = QueryResult.error("TuGraph query failed: " + e.getMessage());
-            result.setExecutionTimeMs(System.currentTimeMillis() - startTime);
-            result.setDataSource(dataSourceName);
-            return result;
+            throw new GraphQueryException(ErrorCode.DATASOURCE_QUERY_ERROR, 
+                    "TuGraph query failed: " + e.getMessage(), e);
         }
     }
     

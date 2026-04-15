@@ -112,7 +112,6 @@ public class BatchingStrategy {
         if (allEntities == null || allEntities.isEmpty()) {
             for (ExternalQuery original : originalQueries) {
                 QueryResult qr = new QueryResult();
-                qr.setSuccess(true);
                 qr.setEntities(new ArrayList<>());
                 results.add(qr);
             }
@@ -124,7 +123,6 @@ public class BatchingStrategy {
         
         if (queriesCount == 1) {
             QueryResult qr = new QueryResult();
-            qr.setSuccess(true);
             qr.setEntities(new ArrayList<>(allEntities));
             qr.setRows(new ArrayList<>(batchResult.getRows()));
             results.add(qr);
@@ -135,7 +133,6 @@ public class BatchingStrategy {
         if (outputIdField != null && !outputIdField.isEmpty()) {
             for (ExternalQuery original : originalQueries) {
                 QueryResult qr = new QueryResult();
-                qr.setSuccess(true);
                 qr.setDataSource(batchResult.getDataSource());
                 
                 Set<String> expectedIds = new LinkedHashSet<>(original.getInputIds());
@@ -164,7 +161,6 @@ public class BatchingStrategy {
         int entityIndex = 0;
         for (ExternalQuery original : originalQueries) {
             QueryResult qr = new QueryResult();
-            qr.setSuccess(true);
             
             List<GraphEntity> queryEntities = new ArrayList<>();
             int inputIdCount = original.getInputIds() != null ? original.getInputIds().size() : 0;

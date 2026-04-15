@@ -1,6 +1,7 @@
 package com.federatedquery.executor;
 
 import com.federatedquery.adapter.*;
+import com.federatedquery.exception.GraphQueryException;
 import com.federatedquery.metadata.*;
 import com.federatedquery.plan.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +13,7 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.*;
+import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -74,7 +76,6 @@ class ExecutorTest {
         assertNotNull(result, "ExecutionResult不能为空");
         assertNotNull(result.getPlanId(), "PlanId不能为空");
         assertEquals(plan.getPlanId(), result.getPlanId(), "PlanId必须匹配");
-        assertTrue(result.isSuccess(), "执行必须成功");
         assertTrue(result.getExecutionTimeMs() >= 0, "执行时间必须>=0");
         
         Map<String, QueryResult> batchResults = result.getBatchResults();
@@ -210,7 +211,7 @@ class ExecutorTest {
     }
     
     @Test
-    @DisplayName("Fallback on failure returns error")
+    @DisplayName("Fallback on failure throws exception")
     void fallbackOnFailure() {
         mockAdapter.registerResponse("errorOp", 
                 MockExternalAdapter.MockResponse.withError("Connection refused"));
@@ -224,13 +225,8 @@ class ExecutorTest {
         query.setOperator("errorOp");
         plan.addExternalQuery(query);
         
-        ExecutionResult result = executor.execute(plan).join();
-        
-        assertNotNull(result, "ExecutionResult不能为空");
-        assertNotNull(result.getPlanId(), "PlanId不能为空");
-        
-        Map<String, QueryResult> batchResults = result.getBatchResults();
-        assertNotNull(batchResults, "BatchResults不能为空");
+        CompletionException thrown = assertThrows(CompletionException.class, () -> executor.execute(plan).join());
+        assertTrue(thrown.getCause() instanceof GraphQueryException, "Cause should be GraphQueryException");
     }
     
     @Test
@@ -248,12 +244,7 @@ class ExecutorTest {
         query.setOperator("failingOp");
         plan.addExternalQuery(query);
         
-        ExecutionResult result = executor.execute(plan).join();
-        
-        assertNotNull(result, "ExecutionResult不能为空");
-        assertNotNull(result.getPlanId(), "PlanId不能为空");
-        
-        Map<String, QueryResult> batchResults2 = result.getBatchResults();
-        assertNotNull(batchResults2, "BatchResults不能为空");
+        CompletionException thrown = assertThrows(CompletionException.class, () -> executor.execute(plan).join());
+        assertTrue(thrown.getCause() instanceof GraphQueryException, "Cause should be GraphQueryException");
     }
 }

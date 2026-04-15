@@ -2,6 +2,7 @@ package com.federatedquery.e2e;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.federatedquery.adapter.*;
+import com.federatedquery.exception.GraphQueryException;
 import com.federatedquery.metadata.*;
 import com.federatedquery.sdk.GraphQuerySDK;
 import com.federatedquery.testutil.GraphQueryMetaFactory;
@@ -378,8 +379,8 @@ class DependencyAwareExecutionE2ETest {
         }
 
         @Test
-        @DisplayName("外部服务不可用时应返回部分结果")
-        void externalServiceUnavailable_ReturnsPartialResult() throws Exception {
+        @DisplayName("外部服务不可用时应抛出异常")
+        void externalServiceUnavailable_ThrowsException() throws Exception {
             GraphEntity ne = createNEEntity("ne1", "NE001", "Router");
             ne.setVariableName("ne");
 
@@ -394,8 +395,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN ne, ltp, target";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
-            assertTrue(json.isArray(), "Result must be an array");
+            assertThrows(GraphQueryException.class, () -> sdk.executeRaw(cypher));
         }
 
         @Test
