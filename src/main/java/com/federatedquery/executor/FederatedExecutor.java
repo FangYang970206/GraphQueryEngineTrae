@@ -347,12 +347,7 @@ public class FederatedExecutor {
         DataSourceAdapter finalAdapter = adapter;
         return runOnExecutor(() -> finalAdapter.execute(convertToExternalQuery(query)))
                 .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
-                .exceptionally(e -> {
-                    log.error("Physical query timeout after {}ms [queryId={}]: {}", 
-                            timeoutMs, query.getId(), query.getCypher());
-                    throw new GraphQueryException(ErrorCode.DATASOURCE_QUERY_ERROR, 
-                            "Physical query timeout after " + timeoutMs + "ms", e);
-                });
+                .exceptionallyCompose(e -> handlePhysicalFailure(query, e));
     }
     
     private CompletableFuture<QueryResult> executeExternal(ExternalQuery query) {
@@ -439,12 +434,7 @@ public class FederatedExecutor {
         
         return runOnExecutor(() -> adapter.execute(combinedQuery))
                 .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
-                .exceptionally(e -> {
-                    log.error("Batch query timeout after {}ms [batchId={}] [dataSource={}]", 
-                            timeoutMs, batch.getId(), batch.getDataSource());
-                    throw new GraphQueryException(ErrorCode.BATCH_EXECUTION_ERROR, 
-                            "Batch query timeout after " + timeoutMs + "ms", e);
-                })
+                .exceptionallyCompose(e -> handleBatchFailure(batch, e))
                 .thenApply(result -> result);
     }
 
@@ -585,44 +575,14 @@ public class FederatedExecutor {
         }
         
         return CompletableFuture.allOf(subFutures.toArray(new CompletableFuture[0]))
-                .thenApply(v -> {
-                    QueryResult combined = new QueryResult();
-                    List<ExecutionResult> subResults = new ArrayList<>();
-                    
-                    for (CompletableFuture<ExecutionResult> future : subFutures) {
-                        try {
-                            ExecutionResult subResult = future.get();
-                            subResults.add(subResult);
-                            for (List<QueryResult> results : subResult.getPhysicalResults().values()) {
-                                for (QueryResult r : results) {
-                                    combined.getEntities().addAll(r.getEntities());
-                                }
-                            }
-                            for (QueryResult r : subResult.getBatchResults().values()) {
-                                combined.getEntities().addAll(r.getEntities());
-                            }
-                            for (QueryResult r : subResult.getExternalResults()) {
-                                combined.getEntities().addAll(r.getEntities());
-                            }
-                        } catch (ExecutionException e) {
-                            Throwable cause = e.getCause();
-                            if (cause instanceof GraphQueryException) {
-                                throw (GraphQueryException) cause;
-                            }
-                            log.error("Union sub-query failed [unionId={}]: {}", union.getId(), e.getMessage());
-                            throw new GraphQueryException(ErrorCode.UNION_EXECUTION_ERROR, 
-                                    "Union sub-query failed", cause);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            log.error("Union sub-query interrupted [unionId={}]", union.getId());
-                            throw new GraphQueryException(ErrorCode.UNION_EXECUTION_ERROR, 
-                                    "Union sub-query interrupted", e);
-                        }
+                .handle((ignored, throwable) -> {
+                    if (throwable != null) {
+                        return CompletableFuture.<QueryResult>failedFuture(
+                                wrapUnionFailure(union, unwrapAsyncFailure(throwable)));
                     }
-                    combined.setData(subResults);
-                    
-                    return combined;
-                });
+                    return CompletableFuture.completedFuture(buildUnionResult(subFutures));
+                })
+                .thenCompose(future -> future);
     }
     
     private DataSourceAdapter getAdapter(String name) {
@@ -652,6 +612,110 @@ public class FederatedExecutor {
     
     private CompletableFuture<QueryResult> runOnExecutor(Supplier<CompletableFuture<QueryResult>> supplier) {
         return CompletableFuture.supplyAsync(supplier, executorService).thenCompose(f -> f);
+    }
+
+    private CompletableFuture<QueryResult> handlePhysicalFailure(PhysicalQuery query, Throwable throwable) {
+        Throwable cause = unwrapAsyncFailure(throwable);
+        if (cause instanceof TimeoutException) {
+            log.error("Physical query timeout after {}ms [queryId={}]: {}",
+                    timeoutMs, query.getId(), query.getCypher());
+            return CompletableFuture.failedFuture(new GraphQueryException(
+                    ErrorCode.DATASOURCE_QUERY_ERROR,
+                    "Physical query timeout after " + timeoutMs + "ms",
+                    cause));
+        }
+        return CompletableFuture.failedFuture(toGraphQueryException(
+                cause,
+                ErrorCode.DATASOURCE_QUERY_ERROR,
+                "Physical query failed [queryId=" + query.getId() + "]"));
+    }
+
+    private CompletableFuture<QueryResult> handleBatchFailure(BatchRequest batch, Throwable throwable) {
+        Throwable cause = unwrapAsyncFailure(throwable);
+        if (cause instanceof TimeoutException) {
+            log.error("Batch query timeout after {}ms [batchId={}] [dataSource={}]",
+                    timeoutMs, batch.getId(), batch.getDataSource());
+            return CompletableFuture.failedFuture(new GraphQueryException(
+                    ErrorCode.BATCH_EXECUTION_ERROR,
+                    "Batch query timeout after " + timeoutMs + "ms",
+                    cause));
+        }
+
+        GraphQueryException exception = toBatchGraphQueryException(batch, cause);
+        log.error("Batch query failed [batchId={}] [dataSource={}]: {}",
+                batch.getId(), batch.getDataSource(), exception.getMessage(), cause);
+        return CompletableFuture.failedFuture(exception);
+    }
+
+    private QueryResult buildUnionResult(List<CompletableFuture<ExecutionResult>> subFutures) {
+        QueryResult combined = new QueryResult();
+        List<ExecutionResult> subResults = new ArrayList<>();
+
+        for (CompletableFuture<ExecutionResult> future : subFutures) {
+            ExecutionResult subResult = future.join();
+            subResults.add(subResult);
+            for (List<QueryResult> results : subResult.getPhysicalResults().values()) {
+                for (QueryResult result : results) {
+                    combined.getEntities().addAll(result.getEntities());
+                }
+            }
+            for (QueryResult result : subResult.getBatchResults().values()) {
+                combined.getEntities().addAll(result.getEntities());
+            }
+            for (QueryResult result : subResult.getExternalResults()) {
+                combined.getEntities().addAll(result.getEntities());
+            }
+        }
+
+        combined.setData(subResults);
+        return combined;
+    }
+
+    private GraphQueryException wrapUnionFailure(UnionPart union, Throwable cause) {
+        if (cause instanceof GraphQueryException graphQueryException
+                && graphQueryException.getErrorCode() == ErrorCode.UNION_EXECUTION_ERROR) {
+            return graphQueryException;
+        }
+
+        if (!(cause instanceof GraphQueryException)) {
+            log.error("Union sub-query failed [unionId={}]: {}",
+                    union.getId(), cause != null ? cause.getMessage() : "Unknown union failure", cause);
+        }
+        return new GraphQueryException(
+                ErrorCode.UNION_EXECUTION_ERROR,
+                "Union sub-query failed [unionId=" + union.getId() + "]",
+                cause);
+    }
+
+    private GraphQueryException toBatchGraphQueryException(BatchRequest batch, Throwable cause) {
+        if (cause instanceof GraphQueryException graphQueryException) {
+            if (graphQueryException.getErrorCode() == ErrorCode.DATASOURCE_CONNECTION_ERROR
+                    || graphQueryException.getErrorCode() == ErrorCode.BATCH_EXECUTION_ERROR) {
+                return graphQueryException;
+            }
+        }
+        return new GraphQueryException(
+                ErrorCode.BATCH_EXECUTION_ERROR,
+                "Batch query failed [batchId=" + batch.getId() + "]",
+                cause);
+    }
+
+    private GraphQueryException toGraphQueryException(Throwable cause, ErrorCode errorCode, String message) {
+        if (cause instanceof GraphQueryException graphQueryException) {
+            return graphQueryException;
+        }
+        return new GraphQueryException(errorCode, message, cause);
+    }
+
+    private Throwable unwrapAsyncFailure(Throwable throwable) {
+        Throwable current = throwable;
+        while (current instanceof CompletionException || current instanceof ExecutionException) {
+            if (current.getCause() == null) {
+                break;
+            }
+            current = current.getCause();
+        }
+        return current;
     }
     
     public void shutdown() {

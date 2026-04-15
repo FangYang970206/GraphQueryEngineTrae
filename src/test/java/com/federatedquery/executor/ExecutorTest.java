@@ -1,6 +1,7 @@
 package com.federatedquery.executor;
 
 import com.federatedquery.adapter.*;
+import com.federatedquery.exception.ErrorCode;
 import com.federatedquery.exception.GraphQueryException;
 import com.federatedquery.metadata.*;
 import com.federatedquery.plan.*;
@@ -246,5 +247,142 @@ class ExecutorTest {
         
         CompletionException thrown = assertThrows(CompletionException.class, () -> executor.execute(plan).join());
         assertTrue(thrown.getCause() instanceof GraphQueryException, "Cause should be GraphQueryException");
+    }
+
+    @Test
+    @DisplayName("Union sub-query failure is wrapped as UNION_EXECUTION_ERROR")
+    void unionFailureWrappedAsUnionExecutionError() {
+        GraphEntity entity = GraphEntity.node("1", "Test");
+        entity.setProperty("name", "ok");
+
+        mockAdapter.registerResponse("okOp", MockExternalAdapter.MockResponse.create().addEntity(entity));
+        mockAdapter.registerResponse("errorOp", MockExternalAdapter.MockResponse.withError("Union branch failed"));
+
+        ExecutionPlan successPlan = new ExecutionPlan();
+        successPlan.setPlanId("success-plan");
+        ExternalQuery successQuery = new ExternalQuery();
+        successQuery.setId("success-query");
+        successQuery.setDataSource("mock-service");
+        successQuery.setOperator("okOp");
+        successPlan.addExternalQuery(successQuery);
+
+        ExecutionPlan failingPlan = new ExecutionPlan();
+        failingPlan.setPlanId("failing-plan");
+        ExternalQuery failingQuery = new ExternalQuery();
+        failingQuery.setId("failing-query");
+        failingQuery.setDataSource("mock-service");
+        failingQuery.setOperator("errorOp");
+        failingPlan.addExternalQuery(failingQuery);
+
+        UnionPart union = new UnionPart();
+        union.setId("union-1");
+        union.addSubPlan(successPlan);
+        union.addSubPlan(failingPlan);
+
+        ExecutionPlan rootPlan = new ExecutionPlan();
+        rootPlan.setPlanId("root-plan");
+        rootPlan.addUnionPart(union);
+
+        CompletionException thrown = assertThrows(CompletionException.class, () -> executor.execute(rootPlan).join());
+        assertInstanceOf(GraphQueryException.class, thrown.getCause(), "Cause should be GraphQueryException");
+
+        GraphQueryException exception = (GraphQueryException) thrown.getCause();
+        assertEquals(ErrorCode.UNION_EXECUTION_ERROR, exception.getErrorCode(), "Union failure should map to 5003");
+        assertEquals(5003, exception.getCode(), "Union failure code should be 5003");
+    }
+
+    @Test
+    @DisplayName("Physical query failure is not mislabeled as timeout")
+    void physicalFailureDoesNotBecomeTimeout() {
+        DataSourceAdapter failingTuGraphAdapter = new DataSourceAdapter() {
+            @Override
+            public String getDataSourceType() {
+                return "TUGRAPH_BOLT";
+            }
+
+            @Override
+            public String getDataSourceName() {
+                return "tugraph";
+            }
+
+            @Override
+            public java.util.concurrent.CompletableFuture<QueryResult> execute(ExternalQuery query) {
+                return java.util.concurrent.CompletableFuture.failedFuture(
+                        new GraphQueryException(ErrorCode.DATASOURCE_QUERY_ERROR, "Physical execution failed"));
+            }
+
+            @Override
+            public QueryResult executeSync(ExternalQuery query) {
+                throw new GraphQueryException(ErrorCode.DATASOURCE_QUERY_ERROR, "Physical execution failed");
+            }
+
+            @Override
+            public boolean isHealthy() {
+                return true;
+            }
+        };
+        executor.registerAdapter("tugraph", failingTuGraphAdapter);
+
+        ExecutionPlan plan = new ExecutionPlan();
+        plan.setPlanId("physical-plan");
+
+        PhysicalQuery physicalQuery = new PhysicalQuery();
+        physicalQuery.setId("physical-q1");
+        physicalQuery.setCypher("MATCH (n) RETURN n");
+        plan.addPhysicalQuery(physicalQuery);
+
+        CompletionException thrown = assertThrows(CompletionException.class, () -> executor.execute(plan).join());
+        assertInstanceOf(GraphQueryException.class, thrown.getCause(), "Cause should be GraphQueryException");
+
+        GraphQueryException exception = (GraphQueryException) thrown.getCause();
+        assertEquals(ErrorCode.DATASOURCE_QUERY_ERROR, exception.getErrorCode(), "Physical failure should remain 3002");
+        assertFalse(exception.getMessage().toLowerCase(Locale.ROOT).contains("timeout"),
+                "Physical non-timeout failure should not be mislabeled as timeout");
+        assertTrue(exception.getMessage().contains("Physical execution failed"),
+                "Original failure message should be preserved");
+    }
+
+    @Test
+    @DisplayName("Batch query failure is wrapped as BATCH_EXECUTION_ERROR")
+    void batchFailureWrappedAsBatchExecutionError() {
+        MockExternalAdapter tugraphAdapter = new MockExternalAdapter();
+        tugraphAdapter.setDataSourceName("tugraph");
+
+        GraphEntity source1 = GraphEntity.node("ltp1", "LTP");
+        source1.setVariableName("ltp");
+        GraphEntity source2 = GraphEntity.node("ltp2", "LTP");
+        source2.setVariableName("ltp");
+
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
+                .addEntity(source1)
+                .addEntity(source2));
+        executor.registerAdapter("tugraph", tugraphAdapter);
+
+        mockAdapter.registerResponse("batchError", MockExternalAdapter.MockResponse.withError("Batch branch failed"));
+
+        ExecutionPlan plan = new ExecutionPlan();
+        plan.setPlanId("batch-plan");
+
+        PhysicalQuery physicalQuery = new PhysicalQuery();
+        physicalQuery.setId("physical-q1");
+        physicalQuery.setCypher("MATCH (ltp) RETURN ltp");
+        plan.addPhysicalQuery(physicalQuery);
+
+        ExternalQuery externalQuery = new ExternalQuery();
+        externalQuery.setId("external-q1");
+        externalQuery.setDataSource("mock-service");
+        externalQuery.setOperator("batchError");
+        externalQuery.setDependsOnPhysicalQuery(true);
+        externalQuery.setSourceVariableName("ltp");
+        externalQuery.setInputIdField("_id");
+        plan.addExternalQuery(externalQuery);
+
+        CompletionException thrown = assertThrows(CompletionException.class, () -> executor.execute(plan).join());
+        assertInstanceOf(GraphQueryException.class, thrown.getCause(), "Cause should be GraphQueryException");
+
+        GraphQueryException exception = (GraphQueryException) thrown.getCause();
+        assertEquals(ErrorCode.BATCH_EXECUTION_ERROR, exception.getErrorCode(), "Batch failure should map to 5002");
+        assertFalse(exception.getMessage().toLowerCase(Locale.ROOT).contains("timeout"),
+                "Batch non-timeout failure should not be mislabeled as timeout");
     }
 }
