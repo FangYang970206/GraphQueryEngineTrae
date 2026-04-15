@@ -16,7 +16,6 @@ public enum ErrorCode {
     METADATA_NOT_FOUND(4001, "Metadata not found"),
     INVALID_METADATA(4002, "Invalid metadata configuration"),
 
-    PARTIAL_RESULT_ERROR(5001, "Partial result returned"),
     BATCH_EXECUTION_ERROR(5002, "Batch execution error"),
     UNION_EXECUTION_ERROR(5003, "Union execution error"),
 

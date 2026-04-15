@@ -151,7 +151,6 @@ class ExecutorTest {
         entity2.setProperty("parentResId", "ltp2");
 
         QueryResult batchResult = new QueryResult();
-        batchResult.setSuccess(true);
         batchResult.setDataSource("mock-service");
         batchResult.setEntities(new ArrayList<>(List.of(entity1, entity2)));
 
