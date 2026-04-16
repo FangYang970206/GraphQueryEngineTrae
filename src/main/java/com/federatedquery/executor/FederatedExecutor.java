@@ -607,6 +607,9 @@ public class FederatedExecutor {
         eq.setDataSource("tugraph");
         eq.setOperator("cypher");
         eq.getFilters().put("cypher", pq.getCypher());
+        if (pq.getParameters() != null && !pq.getParameters().isEmpty()) {
+            eq.getParameters().putAll(pq.getParameters());
+        }
         return eq;
     }
     

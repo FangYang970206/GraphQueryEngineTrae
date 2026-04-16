@@ -73,7 +73,7 @@ public class GraphQuerySDK {
         try {
             Program ast = parser.parseCached(cypher);
             ensureExecuteRecordsMode(ast);
-            return RecordConverter.convertToRecordMaps(executeQuery(ast));
+            return RecordConverter.convertToRecordMaps(executeQuery(ast, null));
         } catch (GraphQueryException e) {
             throw e;
         } catch (CompletionException e) {
@@ -84,8 +84,17 @@ public class GraphQuerySDK {
     }
     
     public List<Map<String, Object>> executeRecords(String cypher, Map<String, Object> params) {
-        String resolvedCypher = resolveParameters(cypher, params);
-        return executeRecords(resolvedCypher);
+        try {
+            Program ast = parser.parseCached(cypher);
+            ensureExecuteRecordsMode(ast);
+            return RecordConverter.convertToRecordMaps(executeQuery(ast, params));
+        } catch (GraphQueryException e) {
+            throw e;
+        } catch (CompletionException e) {
+            throw unwrapAsyncException(e);
+        } catch (Exception e) {
+            throw new GraphQueryException(ErrorCode.QUERY_EXECUTION_ERROR, e.getMessage(), e);
+        }
     }
     
     public List<org.neo4j.driver.Record> executeWithConnector(String cypher) {
@@ -111,10 +120,10 @@ public class GraphQuerySDK {
             }
 
             if (ast.getStatement() != null && ast.getStatement().isProfile()) {
-                return executeWithProfile(cypher, ast);
+                return executeWithProfile(cypher, ast, null);
             }
 
-            List<Map<String, Object>> results = executeQuery(ast);
+            List<Map<String, Object>> results = executeQuery(ast, null);
             return JsonUtil.toJson(results);
         } catch (GraphQueryException e) {
             throw e;
@@ -128,7 +137,7 @@ public class GraphQuerySDK {
     public String executeRaw(String cypher) {
         try {
             Program ast = parser.parseCached(cypher);
-            return JsonUtil.toJson(executeQuery(ast));
+            return JsonUtil.toJson(executeQuery(ast, null));
         } catch (GraphQueryException e) {
             throw e;
         } catch (CompletionException e) {
@@ -139,17 +148,50 @@ public class GraphQuerySDK {
     }
     
     public String execute(String cypher, Map<String, Object> params) {
-        String resolvedCypher = resolveParameters(cypher, params);
-        return execute(resolvedCypher);
+        try {
+            Program ast = parser.parseCached(cypher);
+
+            if (ast.getStatement() != null && ast.getStatement().isExplain()) {
+                return buildExplainResponse(ast);
+            }
+
+            if (ast.getStatement() != null && ast.getStatement().isProfile()) {
+                return executeWithProfile(cypher, ast, params);
+            }
+
+            List<Map<String, Object>> results = executeQuery(ast, params);
+            return JsonUtil.toJson(results);
+        } catch (GraphQueryException e) {
+            throw e;
+        } catch (CompletionException e) {
+            throw unwrapAsyncException(e);
+        } catch (Exception e) {
+            throw new GraphQueryException(ErrorCode.QUERY_EXECUTION_ERROR, e.getMessage(), e);
+        }
     }
     
     public String executeRaw(String cypher, Map<String, Object> params) {
-        String resolvedCypher = resolveParameters(cypher, params);
-        return executeRaw(resolvedCypher);
+        try {
+            Program ast = parser.parseCached(cypher);
+            return JsonUtil.toJson(executeQuery(ast, params));
+        } catch (GraphQueryException e) {
+            throw e;
+        } catch (CompletionException e) {
+            throw unwrapAsyncException(e);
+        } catch (Exception e) {
+            throw new GraphQueryException(ErrorCode.QUERY_EXECUTION_ERROR, e.getMessage(), e);
+        }
     }
 
-    private List<Map<String, Object>> executeQuery(Program ast) {
+    private List<Map<String, Object>> executeQuery(Program ast, Map<String, Object> params) {
         ExecutionPlan plan = rewriter.rewrite(ast);
+        
+        if (params != null && !params.isEmpty()) {
+            for (PhysicalQuery pq : plan.getPhysicalQueries()) {
+                pq.getParameters().putAll(params);
+            }
+        }
+        
         ExecutionResult execResult = executor.execute(plan).join();
 
         List<Map<String, Object>> results = buildTuGraphFormatResults(ast, execResult);
@@ -166,100 +208,6 @@ public class GraphQuerySDK {
         if (ast.getStatement() != null && ast.getStatement().isProfile()) {
             throw new GraphQueryException(ErrorCode.QUERY_EXECUTION_ERROR, "PROFILE not supported in executeRecords mode");
         }
-    }
-    
-    private String resolveParameters(String cypher, Map<String, Object> params) {
-        if (params == null || params.isEmpty()) {
-            return cypher;
-        }
-        
-        String result = cypher;
-        for (Map.Entry<String, Object> entry : params.entrySet()) {
-            String paramName = entry.getKey();
-            
-            if (!isValidParameterName(paramName)) {
-                log.warn("Invalid parameter name: {}, skipping", paramName);
-                continue;
-            }
-            
-            String placeholder = "$" + paramName;
-            String value = formatParameterValue(entry.getValue());
-            result = result.replace(placeholder, value);
-        }
-        
-        return result;
-    }
-    
-    private boolean isValidParameterName(String name) {
-        if (name == null || name.isEmpty()) {
-            return false;
-        }
-        
-        if (!name.matches("^[a-zA-Z_][a-zA-Z0-9_]*$")) {
-            return false;
-        }
-        
-        if (name.length() > 128) {
-            return false;
-        }
-        
-        return true;
-    }
-    
-    private String formatParameterValue(Object value) {
-        if (value == null) {
-            return "NULL";
-        }
-        if (value instanceof String) {
-            String str = (String) value;
-            str = str.replace("\\", "\\\\");
-            str = str.replace("'", "\\'");
-            str = str.replace("\"", "\\\"");
-            str = str.replace("\n", "\\n");
-            str = str.replace("\r", "\\r");
-            str = str.replace("\t", "\\t");
-            return "'" + str + "'";
-        }
-        if (value instanceof Number) {
-            return value.toString();
-        }
-        if (value instanceof Boolean) {
-            return value.toString();
-        }
-        if (value instanceof Collection) {
-            Collection<?> collection = (Collection<?>) value;
-            StringBuilder sb = new StringBuilder("[");
-            boolean first = true;
-            for (Object item : collection) {
-                if (!first) {
-                    sb.append(", ");
-                }
-                sb.append(formatParameterValue(item));
-                first = false;
-            }
-            sb.append("]");
-            return sb.toString();
-        }
-        if (value instanceof Map) {
-            Map<?, ?> map = (Map<?, ?>) value;
-            StringBuilder sb = new StringBuilder("{");
-            boolean first = true;
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                if (!first) {
-                    sb.append(", ");
-                }
-                sb.append(formatParameterValue(entry.getKey()));
-                sb.append(": ");
-                sb.append(formatParameterValue(entry.getValue()));
-                first = false;
-            }
-            sb.append("}");
-            return sb.toString();
-        }
-        String str = value.toString();
-        str = str.replace("\\", "\\\\");
-        str = str.replace("'", "\\'");
-        return "'" + str + "'";
     }
     
     private List<Map<String, Object>> applyPendingFilters(List<Map<String, Object>> results, List<GlobalContext.WhereCondition> pendingFilters) {
@@ -1417,11 +1365,17 @@ public class GraphQuerySDK {
         }
     }
 
-    private String executeWithProfile(String cypher, Program ast) {
+    private String executeWithProfile(String cypher, Program ast, Map<String, Object> params) {
         long startTime = System.currentTimeMillis();
 
         try {
             ExecutionPlan plan = rewriter.rewrite(ast);
+            
+            if (params != null && !params.isEmpty()) {
+                for (PhysicalQuery pq : plan.getPhysicalQueries()) {
+                    pq.getParameters().putAll(params);
+                }
+            }
 
             ExecutionResult execResult = executor.execute(plan).join();
 

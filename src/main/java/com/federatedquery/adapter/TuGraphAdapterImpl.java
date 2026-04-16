@@ -43,9 +43,18 @@ public class TuGraphAdapterImpl implements DataSourceAdapter {
         
         try {
             String cypher = buildCypherQuery(query);
-            log.debug("Executing TuGraph query: {}", cypher);
+            Map<String, Object> parameters = query.getParameters();
             
-            List<Record> records = connector.executeQuery(cypher);
+            log.debug("Executing TuGraph query: {} with {} parameters", cypher, 
+                    parameters != null ? parameters.size() : 0);
+            
+            List<Record> records;
+            if (parameters != null && !parameters.isEmpty()) {
+                Object[] paramArray = convertParametersToArray(parameters);
+                records = connector.executeQuery(cypher, paramArray);
+            } else {
+                records = connector.executeQuery(cypher);
+            }
             
             log.info("Query returned {} records", records != null ? records.size() : 0);
             
@@ -66,6 +75,20 @@ public class TuGraphAdapterImpl implements DataSourceAdapter {
             throw new GraphQueryException(ErrorCode.DATASOURCE_QUERY_ERROR, 
                     "TuGraph query failed: " + e.getMessage(), e);
         }
+    }
+    
+    private Object[] convertParametersToArray(Map<String, Object> parameters) {
+        if (parameters == null || parameters.isEmpty()) {
+            return null;
+        }
+        
+        List<Object> paramList = new ArrayList<>();
+        for (Map.Entry<String, Object> entry : parameters.entrySet()) {
+            paramList.add(entry.getKey());
+            paramList.add(entry.getValue());
+        }
+        
+        return paramList.toArray();
     }
     
     @Override
