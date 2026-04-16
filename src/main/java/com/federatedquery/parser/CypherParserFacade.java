@@ -1,6 +1,7 @@
 package com.federatedquery.parser;
 
 import com.federatedquery.ast.Program;
+import com.federatedquery.exception.SyntaxErrorException;
 import com.federatedquery.grammar.LcypherLexer;
 import com.federatedquery.grammar.LcypherParser;
 import com.github.benmanes.caffeine.cache.Cache;

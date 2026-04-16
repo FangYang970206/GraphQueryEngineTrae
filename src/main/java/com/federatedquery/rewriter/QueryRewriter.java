@@ -1,6 +1,7 @@
 package com.federatedquery.rewriter;
 
 import com.federatedquery.ast.*;
+import com.federatedquery.exception.VirtualEdgeConstraintException;
 import com.federatedquery.metadata.MetadataRegistry;
 import com.federatedquery.plan.*;
 import com.federatedquery.reliability.WhereConditionPushdown;
@@ -50,6 +51,10 @@ public class QueryRewriter {
 
         Statement.Query query = statement.getQuery();
 
+        boolean hasVirtualElements = hasAnyVirtualElements(query);
+        plan.setHasVirtualElements(hasVirtualElements);
+        plan.setDirectExecution(!hasVirtualElements);
+
         extractSnapshotInfo(query, plan);
 
         if (query.getSingleQueries().size() > 1 || !query.getUnions().isEmpty()) {
@@ -61,6 +66,39 @@ public class QueryRewriter {
         extractProjectByInfo(query, statement, plan);
 
         return plan;
+    }
+
+    private boolean hasAnyVirtualElements(Statement.Query query) {
+        for (Statement.SingleQuery sq : query.getSingleQueries()) {
+            if (hasVirtualElementsInSingleQuery(sq)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasVirtualElementsInSingleQuery(Statement.SingleQuery sq) {
+        for (MatchClause match : sq.getMatchClauses()) {
+            Pattern pattern = match.getPattern();
+            if (pattern != null) {
+                VirtualEdgeDetector.DetectionResult detection = detector.detect(pattern);
+                if (detection.hasVirtualElements()) {
+                    return true;
+                }
+            }
+        }
+        for (List<MatchClause> matchList : sq.getPrecedingMatchClauses()) {
+            for (MatchClause match : matchList) {
+                Pattern pattern = match.getPattern();
+                if (pattern != null) {
+                    VirtualEdgeDetector.DetectionResult detection = detector.detect(pattern);
+                    if (detection.hasVirtualElements()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private void extractSnapshotInfo(Statement.Query query, ExecutionPlan plan) {

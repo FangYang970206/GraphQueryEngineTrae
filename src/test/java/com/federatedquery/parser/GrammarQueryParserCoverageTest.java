@@ -11,6 +11,7 @@ import com.federatedquery.ast.ReturnClause;
 import com.federatedquery.ast.Statement;
 import com.federatedquery.ast.UnionClause;
 import com.federatedquery.ast.Variable;
+import com.federatedquery.exception.SyntaxErrorException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

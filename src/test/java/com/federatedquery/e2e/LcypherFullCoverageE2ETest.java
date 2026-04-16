@@ -17,6 +17,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LcypherFullCoverageE2ETest {
@@ -115,27 +116,19 @@ class LcypherFullCoverageE2ETest {
     }
 
     @Test
-    @DisplayName("EXPLAIN: returns plan payload with physical/external sections")
+    @DisplayName("EXPLAIN: throws exception as not supported")
     void explainPayloadSemantics() throws Exception {
-        JsonNode json = JsonUtil.readTree(sdk.execute("EXPLAIN MATCH (n:NetworkElement) RETURN n"));
-        assertEquals("explain", json.get("type").asText(), "type must be explain");
-        assertTrue(json.has("physicalQueries"), "physicalQueries must exist");
-        assertTrue(json.has("externalQueries"), "externalQueries must exist");
-        assertTrue(json.get("physicalQueries").isArray(), "physicalQueries must be array");
+        assertThrows(com.federatedquery.exception.SyntaxErrorException.class, () -> {
+            sdk.execute("EXPLAIN MATCH (n:NetworkElement) RETURN n");
+        }, "EXPLAIN should throw SyntaxErrorException");
     }
 
     @Test
-    @DisplayName("PROFILE: returns execution metrics and result list")
+    @DisplayName("PROFILE: throws exception as not supported")
     void profilePayloadSemantics() throws Exception {
-        GraphEntity ne = node("ne1", "NetworkElement", "n");
-        ne.setProperty("name", "NE001");
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
-
-        JsonNode json = JsonUtil.readTree(sdk.execute("PROFILE MATCH (n:NetworkElement) RETURN n"));
-        assertEquals("profile", json.get("type").asText(), "type must be profile");
-        assertTrue(json.get("executionTimeMs").asLong() >= 0, "executionTimeMs must be non-negative");
-        assertEquals(1, json.get("resultCount").asInt(), "resultCount must match rows");
-        assertTrue(json.get("results").isArray(), "results must be array");
+        assertThrows(com.federatedquery.exception.SyntaxErrorException.class, () -> {
+            sdk.execute("PROFILE MATCH (n:NetworkElement) RETURN n");
+        }, "PROFILE should throw SyntaxErrorException");
     }
 
     @Test

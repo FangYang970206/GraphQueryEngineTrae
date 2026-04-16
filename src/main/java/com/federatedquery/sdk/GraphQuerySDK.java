@@ -1,15 +1,11 @@
 package com.federatedquery.sdk;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.federatedquery.aggregator.GlobalSorter;
 import com.federatedquery.aggregator.PendingFilterApplier;
 import com.federatedquery.aggregator.ResultConverter;
 import com.federatedquery.ast.*;
-import com.federatedquery.ast.UnionClause;
 import com.federatedquery.connector.RecordConverter;
-import com.federatedquery.connector.TuGraphConfig;
 import com.federatedquery.connector.TuGraphConnector;
-import com.federatedquery.connector.TuGraphConnectorImpl;
 import com.federatedquery.exception.ErrorCode;
 import com.federatedquery.exception.GraphQueryException;
 import com.federatedquery.executor.ExecutionResult;
@@ -18,7 +14,6 @@ import com.federatedquery.parser.CypherParserFacade;
 import com.federatedquery.plan.ExecutionPlan;
 import com.federatedquery.plan.GlobalContext;
 import com.federatedquery.plan.PhysicalQuery;
-import com.federatedquery.plan.ExternalQuery;
 import com.federatedquery.rewriter.QueryRewriter;
 import com.federatedquery.util.JsonUtil;
 import com.federatedquery.executor.FederatedExecutor;
@@ -77,7 +72,6 @@ public class GraphQuerySDK {
     public List<Map<String, Object>> executeRecords(String cypher) {
         try {
             Program ast = parser.parseCached(cypher);
-            ensureExecuteRecordsMode(ast);
             return RecordConverter.convertToRecordMaps(executeQuery(ast, null));
         } catch (GraphQueryException e) {
             throw e;
@@ -91,7 +85,6 @@ public class GraphQuerySDK {
     public List<Map<String, Object>> executeRecords(String cypher, Map<String, Object> params) {
         try {
             Program ast = parser.parseCached(cypher);
-            ensureExecuteRecordsMode(ast);
             return RecordConverter.convertToRecordMaps(executeQuery(ast, params));
         } catch (GraphQueryException e) {
             throw e;
@@ -119,15 +112,6 @@ public class GraphQuerySDK {
     public String execute(String cypher) {
         try {
             Program ast = parser.parseCached(cypher);
-
-            if (ast.getStatement() != null && ast.getStatement().isExplain()) {
-                return buildExplainResponse(ast);
-            }
-
-            if (ast.getStatement() != null && ast.getStatement().isProfile()) {
-                return executeWithProfile(cypher, ast, null);
-            }
-
             List<Map<String, Object>> results = executeQuery(ast, null);
             return JsonUtil.toJson(results);
         } catch (GraphQueryException e) {
@@ -155,15 +139,6 @@ public class GraphQuerySDK {
     public String execute(String cypher, Map<String, Object> params) {
         try {
             Program ast = parser.parseCached(cypher);
-
-            if (ast.getStatement() != null && ast.getStatement().isExplain()) {
-                return buildExplainResponse(ast);
-            }
-
-            if (ast.getStatement() != null && ast.getStatement().isProfile()) {
-                return executeWithProfile(cypher, ast, params);
-            }
-
             List<Map<String, Object>> results = executeQuery(ast, params);
             return JsonUtil.toJson(results);
         } catch (GraphQueryException e) {
@@ -191,6 +166,10 @@ public class GraphQuerySDK {
     private List<Map<String, Object>> executeQuery(Program ast, Map<String, Object> params) {
         ExecutionPlan plan = rewriter.rewrite(ast);
         
+        if (plan.isDirectExecution() && tugraphConnector != null) {
+            return executeDirectQuery(ast, params);
+        }
+        
         if (params != null && !params.isEmpty()) {
             for (PhysicalQuery pq : plan.getPhysicalQueries()) {
                 pq.getParameters().putAll(params);
@@ -206,13 +185,153 @@ public class GraphQuerySDK {
         return results;
     }
 
-    private void ensureExecuteRecordsMode(Program ast) {
-        if (ast.getStatement() != null && ast.getStatement().isExplain()) {
-            throw new GraphQueryException(ErrorCode.QUERY_EXECUTION_ERROR, "EXPLAIN not supported in executeRecords mode");
+    private List<Map<String, Object>> executeDirectQuery(Program ast, Map<String, Object> params) {
+        if (tugraphConnector == null) {
+            throw new GraphQueryException(ErrorCode.DATASOURCE_CONNECTION_ERROR, 
+                "TuGraphConnector not configured for direct execution");
         }
-        if (ast.getStatement() != null && ast.getStatement().isProfile()) {
-            throw new GraphQueryException(ErrorCode.QUERY_EXECUTION_ERROR, "PROFILE not supported in executeRecords mode");
+        
+        String cypher = ast.toCypher();
+        List<org.neo4j.driver.Record> records;
+        
+        if (params != null && !params.isEmpty()) {
+            records = tugraphConnector.executeQuery(cypher, params.values().toArray());
+        } else {
+            records = tugraphConnector.executeQuery(cypher);
         }
+        
+        return convertRecordsToMaps(records);
+    }
+
+    private List<Map<String, Object>> convertRecordsToMaps(List<org.neo4j.driver.Record> records) {
+        if (records == null || records.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (org.neo4j.driver.Record record : records) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            for (String key : record.keys()) {
+                org.neo4j.driver.Value value = record.get(key);
+                row.put(key, convertNeo4jValue(value));
+            }
+            results.add(row);
+        }
+        return results;
+    }
+
+    private Object convertNeo4jValue(org.neo4j.driver.Value value) {
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        
+        try {
+            if (value.type().name().equals("NODE")) {
+                return convertNode(value.asNode());
+            }
+        } catch (Exception ignored) {}
+        
+        try {
+            if (value.type().name().equals("RELATIONSHIP")) {
+                return convertRelationship(value.asRelationship());
+            }
+        } catch (Exception ignored) {}
+        
+        try {
+            if (value.type().name().equals("PATH")) {
+                return convertPath(value.asPath());
+            }
+        } catch (Exception ignored) {}
+        
+        try {
+            if (value.type().name().equals("LIST")) {
+                List<Object> list = new ArrayList<>();
+                for (Object item : value.asList()) {
+                    if (item instanceof org.neo4j.driver.Value) {
+                        list.add(convertNeo4jValue((org.neo4j.driver.Value) item));
+                    } else {
+                        list.add(item);
+                    }
+                }
+                return list;
+            }
+        } catch (Exception ignored) {}
+        
+        try {
+            if (value.type().name().equals("MAP")) {
+                Map<String, Object> map = new LinkedHashMap<>();
+                for (Map.Entry<String, Object> entry : value.asMap().entrySet()) {
+                    if (entry.getValue() instanceof org.neo4j.driver.Value) {
+                        map.put(entry.getKey(), convertNeo4jValue((org.neo4j.driver.Value) entry.getValue()));
+                    } else {
+                        map.put(entry.getKey(), entry.getValue());
+                    }
+                }
+                return map;
+            }
+        } catch (Exception ignored) {}
+        
+        return value.asObject();
+    }
+
+    private Map<String, Object> convertNode(org.neo4j.driver.types.Node node) {
+        Map<String, Object> nodeMap = new LinkedHashMap<>();
+        
+        List<String> labels = new ArrayList<>();
+        for (String label : node.labels()) {
+            labels.add(label);
+        }
+        
+        if (!labels.isEmpty()) {
+            nodeMap.put("label", labels.get(0));
+        }
+        
+        for (String key : node.keys()) {
+            Object value = node.get(key).asObject();
+            nodeMap.put(key, value);
+            
+            if ("resId".equals(key) && !nodeMap.containsKey("id")) {
+                nodeMap.put("id", value);
+            }
+        }
+        
+        return nodeMap;
+    }
+
+    private Map<String, Object> convertRelationship(org.neo4j.driver.types.Relationship rel) {
+        Map<String, Object> relMap = new LinkedHashMap<>();
+        relMap.put("_id", rel.id());
+        relMap.put("_type", rel.type());
+        relMap.put("_startId", rel.startNodeId());
+        relMap.put("_endId", rel.endNodeId());
+        
+        Map<String, Object> properties = new LinkedHashMap<>();
+        for (String key : rel.keys()) {
+            properties.put(key, rel.get(key).asObject());
+        }
+        relMap.put("_properties", properties);
+        
+        return relMap;
+    }
+
+    private Map<String, Object> convertPath(org.neo4j.driver.types.Path path) {
+        Map<String, Object> pathMap = new LinkedHashMap<>();
+        
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        for (org.neo4j.driver.types.Node node : path.nodes()) {
+            nodes.add(convertNode(node));
+        }
+        
+        List<Map<String, Object>> relationships = new ArrayList<>();
+        for (org.neo4j.driver.types.Relationship rel : path.relationships()) {
+            relationships.add(convertRelationship(rel));
+        }
+        
+        pathMap.put("nodes", nodes);
+        pathMap.put("relationships", relationships);
+        pathMap.put("length", relationships.size());
+        
+        return pathMap;
     }
     
     private List<Map<String, Object>> applyDeduplication(List<Map<String, Object>> results, Program ast) {
@@ -231,85 +350,6 @@ public class GraphQuerySDK {
         }
         
         return deduplicator.deduplicateRows(results, true);
-    }
-    
-    private String buildExplainResponse(Program ast) {
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("type", "explain");
-        response.put("originalCypher", ast.toCypher());
-        
-        try {
-            ExecutionPlan plan = rewriter.rewrite(ast);
-            
-            List<Map<String, Object>> physicalQueries = new ArrayList<>();
-            for (PhysicalQuery pq : plan.getPhysicalQueries()) {
-                Map<String, Object> pqInfo = new LinkedHashMap<>();
-                pqInfo.put("id", pq.getId());
-                pqInfo.put("cypher", pq.getCypher());
-                physicalQueries.add(pqInfo);
-            }
-            
-            List<Map<String, Object>> externalQueries = new ArrayList<>();
-            for (ExternalQuery eq : plan.getExternalQueries()) {
-                Map<String, Object> eqInfo = new LinkedHashMap<>();
-                eqInfo.put("id", eq.getId());
-                eqInfo.put("dataSource", eq.getDataSource());
-                eqInfo.put("operator", eq.getOperator());
-                eqInfo.put("inputIds", eq.getInputIds());
-                externalQueries.add(eqInfo);
-            }
-            
-            response.put("physicalQueries", physicalQueries);
-            response.put("externalQueries", externalQueries);
-            response.put("hasVirtualElements", plan.hasVirtualElements());
-            
-            return JsonUtil.toJson(response);
-        } catch (GraphQueryException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new GraphQueryException(ErrorCode.QUERY_EXECUTION_ERROR, e.getMessage(), e);
-        }
-    }
-
-    private String executeWithProfile(String cypher, Program ast, Map<String, Object> params) {
-        long startTime = System.currentTimeMillis();
-
-        try {
-            ExecutionPlan plan = rewriter.rewrite(ast);
-            
-            if (params != null && !params.isEmpty()) {
-                for (PhysicalQuery pq : plan.getPhysicalQueries()) {
-                    pq.getParameters().putAll(params);
-                }
-            }
-
-            ExecutionResult execResult = executor.execute(plan).join();
-
-            long executionTime = System.currentTimeMillis() - startTime;
-
-            List<Map<String, Object>> results = resultConverter.buildResults(ast, execResult);
-
-            results = pendingFilterApplier.apply(results, plan.getGlobalContext().getPendingFilters());
-
-            results = globalSorter.applySortAndPagination(results, plan.getGlobalContext());
-
-            results = applyDeduplication(results, ast);
-
-            Map<String, Object> profileResponse = new LinkedHashMap<>();
-            profileResponse.put("type", "profile");
-            profileResponse.put("originalCypher", cypher);
-            profileResponse.put("executionTimeMs", executionTime);
-            profileResponse.put("resultCount", results.size());
-            profileResponse.put("results", results);
-
-            return JsonUtil.toJson(profileResponse);
-        } catch (GraphQueryException e) {
-            throw e;
-        } catch (CompletionException e) {
-            throw unwrapAsyncException(e);
-        } catch (Exception e) {
-            throw new GraphQueryException(ErrorCode.QUERY_EXECUTION_ERROR, e.getMessage(), e);
-        }
     }
 
     private GraphQueryException unwrapAsyncException(Throwable e) {

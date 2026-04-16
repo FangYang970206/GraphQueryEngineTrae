@@ -1,6 +1,7 @@
 package com.federatedquery.parser;
 
 import com.federatedquery.ast.*;
+import com.federatedquery.exception.SyntaxErrorException;
 import com.federatedquery.grammar.LcypherBaseVisitor;
 import com.federatedquery.grammar.LcypherParser;
 import org.springframework.stereotype.Component;
@@ -23,14 +24,14 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     
     @Override
     public Statement visitOC_Statement(LcypherParser.OC_StatementContext ctx) {
-        Statement statement = new Statement();
-        
         if (ctx.EXPLAIN() != null) {
-            statement.setExplain(true);
+            throw new SyntaxErrorException("EXPLAIN is not supported");
         }
         if (ctx.PROFILE() != null) {
-            statement.setProfile(true);
+            throw new SyntaxErrorException("PROFILE is not supported");
         }
+        
+        Statement statement = new Statement();
         
         if (ctx.oC_Query() != null) {
             statement.setQuery(visitOC_Query(ctx.oC_Query()));

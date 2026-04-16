@@ -6,6 +6,7 @@ import lombok.Getter;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Collections;
 
 @Data
 public class ExecutionPlan {
@@ -17,29 +18,33 @@ public class ExecutionPlan {
     private GlobalContext globalContext = new GlobalContext();
     @Getter(AccessLevel.NONE)
     private boolean hasVirtualElements = false;
-    private List<String> warnings = new ArrayList<>();
-    
+    private boolean directExecution = false;
+
     public boolean hasVirtualElements() {
         return hasVirtualElements;
     }
-    
+
     public void setHasVirtualElements(boolean hasVirtualElements) {
         this.hasVirtualElements = hasVirtualElements;
     }
-    
+
+    public boolean isDirectExecution() {
+        return directExecution;
+    }
+
+    public void setDirectExecution(boolean directExecution) {
+        this.directExecution = directExecution;
+    }
+
     public void addPhysicalQuery(PhysicalQuery query) {
         this.physicalQueries.add(query);
     }
-    
+
     public void addExternalQuery(ExternalQuery query) {
         this.externalQueries.add(query);
     }
-    
+
     public void addUnionPart(UnionPart part) {
         this.unionParts.add(part);
-    }
-    
-    public void addWarning(String warning) {
-        this.warnings.add(warning);
     }
 }

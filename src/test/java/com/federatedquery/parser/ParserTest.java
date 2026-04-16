@@ -1,6 +1,7 @@
 package com.federatedquery.parser;
 
 import com.federatedquery.ast.*;
+import com.federatedquery.exception.SyntaxErrorException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
