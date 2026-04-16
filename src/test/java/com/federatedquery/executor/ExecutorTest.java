@@ -23,7 +23,6 @@ class ExecutorTest {
     @Spy
     private MetadataRegistryImpl registry = new MetadataRegistryImpl();
     private MockExternalAdapter mockAdapter;
-    @InjectMocks
     private FederatedExecutor executor;
     
     @BeforeEach
@@ -35,6 +34,10 @@ class ExecutorTest {
         
         mockAdapter = new MockExternalAdapter();
         mockAdapter.setDataSourceName("mock-service");
+        
+        DependencyResolver dependencyResolver = new DependencyResolver();
+        ResultEnricher resultEnricher = new ResultEnricher();
+        executor = new FederatedExecutor(registry, dependencyResolver, resultEnricher);
         executor.registerAdapter("mock-service", mockAdapter);
     }
     

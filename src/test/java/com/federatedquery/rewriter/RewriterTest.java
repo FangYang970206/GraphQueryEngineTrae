@@ -35,7 +35,9 @@ class RewriterTest {
 
         detector = new VirtualEdgeDetector(registry);
         whereConditionPushdown = new WhereConditionPushdown(registry);
-        rewriter = new QueryRewriter(registry, detector, whereConditionPushdown);
+        PhysicalQueryBuilder physicalQueryBuilder = new PhysicalQueryBuilder();
+        MixedPatternRewriter mixedPatternRewriter = new MixedPatternRewriter(registry, physicalQueryBuilder);
+        rewriter = new QueryRewriter(registry, detector, whereConditionPushdown, physicalQueryBuilder, mixedPatternRewriter);
         parser = new CypherParserFacade(astVisitor);
     }
     

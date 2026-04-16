@@ -2,7 +2,9 @@ package com.federatedquery.e2e;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.federatedquery.adapter.*;
+import com.federatedquery.executor.DependencyResolver;
 import com.federatedquery.executor.FederatedExecutor;
+import com.federatedquery.executor.ResultEnricher;
 import com.federatedquery.metadata.*;
 import com.federatedquery.sdk.GraphQuerySDK;
 import com.federatedquery.testutil.GraphQueryMetaFactory;
@@ -811,7 +813,9 @@ class E2ETest {
     @Test
     @DisplayName("外部服务超时配置测试")
     void externalServiceTimeoutTest() throws Exception {
-        FederatedExecutor executorWithTimeout = new FederatedExecutor(registry);
+        DependencyResolver dependencyResolver = new DependencyResolver();
+        ResultEnricher resultEnricher = new ResultEnricher();
+        FederatedExecutor executorWithTimeout = new FederatedExecutor(registry, dependencyResolver, resultEnricher);
         executorWithTimeout.setTimeoutMs(5000);
         executorWithTimeout.registerAdapter("tugraph", tugraphAdapter);
         

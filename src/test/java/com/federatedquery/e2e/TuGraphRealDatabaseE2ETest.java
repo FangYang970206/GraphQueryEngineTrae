@@ -3,10 +3,14 @@ package com.federatedquery.e2e;
 import com.federatedquery.adapter.*;
 import com.federatedquery.aggregator.*;
 import com.federatedquery.connector.*;
+import com.federatedquery.executor.DependencyResolver;
 import com.federatedquery.executor.FederatedExecutor;
+import com.federatedquery.executor.ResultEnricher;
 import com.federatedquery.metadata.*;
 import com.federatedquery.parser.CypherParserFacade;
 import com.federatedquery.parser.CypherASTVisitor;
+import com.federatedquery.rewriter.MixedPatternRewriter;
+import com.federatedquery.rewriter.PhysicalQueryBuilder;
 import com.federatedquery.rewriter.QueryRewriter;
 import com.federatedquery.rewriter.VirtualEdgeDetector;
 import com.federatedquery.reliability.WhereConditionPushdown;
@@ -227,7 +231,9 @@ class TuGraphRealDatabaseE2ETest {
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create()
                 .addEntity(neEntity));
         
-        FederatedExecutor executor = new FederatedExecutor(registry);
+        DependencyResolver dependencyResolver = new DependencyResolver();
+        ResultEnricher resultEnricher = new ResultEnricher();
+        FederatedExecutor executor = new FederatedExecutor(registry, dependencyResolver, resultEnricher);
         executor.registerAdapter("tugraph", tugraphAdapter);
         executor.registerAdapter("kpi-service", kpiAdapter);
         executor.registerAdapter("alarm-service", alarmAdapter);
@@ -235,7 +241,9 @@ class TuGraphRealDatabaseE2ETest {
         CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor());
         VirtualEdgeDetector detector = new VirtualEdgeDetector(registry);
         WhereConditionPushdown whereConditionPushdown = new WhereConditionPushdown(registry);
-        QueryRewriter rewriter = new QueryRewriter(registry, detector, whereConditionPushdown);
+        PhysicalQueryBuilder physicalQueryBuilder = new PhysicalQueryBuilder();
+        MixedPatternRewriter mixedPatternRewriter = new MixedPatternRewriter(registry, physicalQueryBuilder);
+        QueryRewriter rewriter = new QueryRewriter(registry, detector, whereConditionPushdown, physicalQueryBuilder, mixedPatternRewriter);
         UnionDeduplicator deduplicator = new UnionDeduplicator();
         
         sdk = new GraphQuerySDK(parser, rewriter, executor, deduplicator);
@@ -263,8 +271,12 @@ class TuGraphRealDatabaseE2ETest {
         CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor());
         VirtualEdgeDetector detector = new VirtualEdgeDetector(registry);
         WhereConditionPushdown whereConditionPushdown = new WhereConditionPushdown(registry);
-        QueryRewriter rewriter = new QueryRewriter(registry, detector, whereConditionPushdown);
-        FederatedExecutor executor = new FederatedExecutor(registry);
+        PhysicalQueryBuilder physicalQueryBuilder = new PhysicalQueryBuilder();
+        MixedPatternRewriter mixedPatternRewriter = new MixedPatternRewriter(registry, physicalQueryBuilder);
+        QueryRewriter rewriter = new QueryRewriter(registry, detector, whereConditionPushdown, physicalQueryBuilder, mixedPatternRewriter);
+        DependencyResolver dependencyResolver = new DependencyResolver();
+        ResultEnricher resultEnricher = new ResultEnricher();
+        FederatedExecutor executor = new FederatedExecutor(registry, dependencyResolver, resultEnricher);
         UnionDeduplicator deduplicator = new UnionDeduplicator();
         
         TuGraphConnector sdkConnector = new TuGraphConnectorImpl(TuGraphConfig.defaultConfig());
@@ -287,8 +299,12 @@ class TuGraphRealDatabaseE2ETest {
         CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor());
         VirtualEdgeDetector detector = new VirtualEdgeDetector(registry);
         WhereConditionPushdown whereConditionPushdown = new WhereConditionPushdown(registry);
-        QueryRewriter rewriter = new QueryRewriter(registry, detector, whereConditionPushdown);
-        FederatedExecutor executor = new FederatedExecutor(registry);
+        PhysicalQueryBuilder physicalQueryBuilder = new PhysicalQueryBuilder();
+        MixedPatternRewriter mixedPatternRewriter = new MixedPatternRewriter(registry, physicalQueryBuilder);
+        QueryRewriter rewriter = new QueryRewriter(registry, detector, whereConditionPushdown, physicalQueryBuilder, mixedPatternRewriter);
+        DependencyResolver dependencyResolver = new DependencyResolver();
+        ResultEnricher resultEnricher = new ResultEnricher();
+        FederatedExecutor executor = new FederatedExecutor(registry, dependencyResolver, resultEnricher);
         UnionDeduplicator deduplicator = new UnionDeduplicator();
         
         TuGraphConnector sdkConnector = new TuGraphConnectorImpl(TuGraphConfig.defaultConfig());

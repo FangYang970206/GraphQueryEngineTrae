@@ -3,7 +3,9 @@ package com.federatedquery.testutil;
 import com.federatedquery.adapter.MockExternalAdapter;
 import com.federatedquery.aggregator.UnionDeduplicator;
 import com.federatedquery.connector.TuGraphConnector;
+import com.federatedquery.executor.DependencyResolver;
 import com.federatedquery.executor.FederatedExecutor;
+import com.federatedquery.executor.ResultEnricher;
 import com.federatedquery.metadata.DataSourceMetadata;
 import com.federatedquery.metadata.DataSourceType;
 import com.federatedquery.metadata.LabelMetadata;
@@ -13,6 +15,8 @@ import com.federatedquery.metadata.VirtualEdgeBinding;
 import com.federatedquery.parser.CypherASTVisitor;
 import com.federatedquery.parser.CypherParserFacade;
 import com.federatedquery.reliability.WhereConditionPushdown;
+import com.federatedquery.rewriter.MixedPatternRewriter;
+import com.federatedquery.rewriter.PhysicalQueryBuilder;
 import com.federatedquery.rewriter.QueryRewriter;
 import com.federatedquery.rewriter.VirtualEdgeDetector;
 import com.federatedquery.sdk.GraphQuerySDK;
@@ -71,8 +75,12 @@ public final class GraphQueryMetaFactory {
     public GraphQuerySDK createSdk() {
         CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor());
         VirtualEdgeDetector detector = new VirtualEdgeDetector(registry);
-        QueryRewriter rewriter = new QueryRewriter(registry, detector, new WhereConditionPushdown(registry));
-        FederatedExecutor executor = new FederatedExecutor(registry);
+        PhysicalQueryBuilder physicalQueryBuilder = new PhysicalQueryBuilder();
+        MixedPatternRewriter mixedPatternRewriter = new MixedPatternRewriter(registry, physicalQueryBuilder);
+        QueryRewriter rewriter = new QueryRewriter(registry, detector, new WhereConditionPushdown(registry), physicalQueryBuilder, mixedPatternRewriter);
+        DependencyResolver dependencyResolver = new DependencyResolver();
+        ResultEnricher resultEnricher = new ResultEnricher();
+        FederatedExecutor executor = new FederatedExecutor(registry, dependencyResolver, resultEnricher);
         adapters.forEach(executor::registerAdapter);
         return new GraphQuerySDK(
                 parser,
@@ -84,8 +92,12 @@ public final class GraphQueryMetaFactory {
     public GraphQuerySDK createSdk(TuGraphConnector connector) {
         CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor());
         VirtualEdgeDetector detector = new VirtualEdgeDetector(registry);
-        QueryRewriter rewriter = new QueryRewriter(registry, detector, new WhereConditionPushdown(registry));
-        FederatedExecutor executor = new FederatedExecutor(registry);
+        PhysicalQueryBuilder physicalQueryBuilder = new PhysicalQueryBuilder();
+        MixedPatternRewriter mixedPatternRewriter = new MixedPatternRewriter(registry, physicalQueryBuilder);
+        QueryRewriter rewriter = new QueryRewriter(registry, detector, new WhereConditionPushdown(registry), physicalQueryBuilder, mixedPatternRewriter);
+        DependencyResolver dependencyResolver = new DependencyResolver();
+        ResultEnricher resultEnricher = new ResultEnricher();
+        FederatedExecutor executor = new FederatedExecutor(registry, dependencyResolver, resultEnricher);
         adapters.forEach(executor::registerAdapter);
         return new GraphQuerySDK(
                 parser,
@@ -96,13 +108,18 @@ public final class GraphQueryMetaFactory {
     }
 
     public FederatedExecutor createExecutor() {
-        FederatedExecutor executor = new FederatedExecutor(registry);
+        DependencyResolver dependencyResolver = new DependencyResolver();
+        ResultEnricher resultEnricher = new ResultEnricher();
+        FederatedExecutor executor = new FederatedExecutor(registry, dependencyResolver, resultEnricher);
         adapters.forEach(executor::registerAdapter);
         return executor;
     }
 
     public QueryRewriter createRewriter() {
-        return new QueryRewriter(registry, new VirtualEdgeDetector(registry), new WhereConditionPushdown(registry));
+        VirtualEdgeDetector detector = new VirtualEdgeDetector(registry);
+        PhysicalQueryBuilder physicalQueryBuilder = new PhysicalQueryBuilder();
+        MixedPatternRewriter mixedPatternRewriter = new MixedPatternRewriter(registry, physicalQueryBuilder);
+        return new QueryRewriter(registry, detector, new WhereConditionPushdown(registry), physicalQueryBuilder, mixedPatternRewriter);
     }
 
     public CypherParserFacade createParser() {
