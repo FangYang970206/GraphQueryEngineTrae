@@ -45,7 +45,7 @@ class LcypherFullCoverageE2ETest {
         ne.setProperty("type", "Router");
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
 
-        JsonNode json = JsonUtil.readTree(sdk.executeRaw("MATCH (n:NetworkElement) RETURN n"));
+        JsonNode json = JsonUtil.readTree(sdk.execute("MATCH (n:NetworkElement) RETURN n"));
         assertTrue(json.isArray(), "Result must be an array");
         assertEquals(1, json.size(), "Result must contain 1 row");
         JsonNode row = json.get(0);
@@ -67,7 +67,7 @@ class LcypherFullCoverageE2ETest {
         ne3.setProperty("name", "NE003");
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne1).addEntity(ne2).addEntity(ne3));
 
-        JsonNode json = JsonUtil.readTree(sdk.executeRaw("MATCH (n:NetworkElement) WHERE n.name >= 'NE001' RETURN n ORDER BY n.name DESC SKIP 1 LIMIT 1"));
+        JsonNode json = JsonUtil.readTree(sdk.execute("MATCH (n:NetworkElement) WHERE n.name >= 'NE001' RETURN n ORDER BY n.name DESC SKIP 1 LIMIT 1"));
         assertTrue(json.isArray(), "Result must be an array");
         assertEquals(1, json.size(), "Pagination must return exactly one row");
         JsonNode n = json.get(0).get("n");
@@ -81,7 +81,7 @@ class LcypherFullCoverageE2ETest {
         ne.setProperty("name", "NE001");
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
 
-        JsonNode json = JsonUtil.readTree(sdk.executeRaw("MATCH (n:NetworkElement) RETURN n UNION MATCH (n:NetworkElement) RETURN n"));
+        JsonNode json = JsonUtil.readTree(sdk.execute("MATCH (n:NetworkElement) RETURN n UNION MATCH (n:NetworkElement) RETURN n"));
         assertTrue(json.isArray(), "Result must be an array");
         assertEquals(1, json.size(), "UNION must deduplicate identical rows");
     }
@@ -93,7 +93,7 @@ class LcypherFullCoverageE2ETest {
         ne.setProperty("name", "NE001");
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
 
-        JsonNode json = JsonUtil.readTree(sdk.executeRaw("MATCH (n:NetworkElement) RETURN n UNION ALL MATCH (n:NetworkElement) RETURN n"));
+        JsonNode json = JsonUtil.readTree(sdk.execute("MATCH (n:NetworkElement) RETURN n UNION ALL MATCH (n:NetworkElement) RETURN n"));
         assertTrue(json.isArray(), "Result must be an array");
         assertEquals(2, json.size(), "UNION ALL must keep duplicates");
     }
@@ -109,7 +109,7 @@ class LcypherFullCoverageE2ETest {
         ne2.setProperty("type", "Switch");
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne1).addEntity(ne2));
 
-        JsonNode json = JsonUtil.readTree(sdk.executeRaw("MATCH (n:NetworkElement) WITH n WHERE n.type = 'Router' RETURN n"));
+        JsonNode json = JsonUtil.readTree(sdk.execute("MATCH (n:NetworkElement) WITH n WHERE n.type = 'Router' RETURN n"));
         assertTrue(json.isArray(), "Result must be an array");
         assertEquals(1, json.size(), "WHERE after WITH must keep only Router");
         assertEquals("NE001", json.get(0).get("n").get("name").asText(), "Remaining row must be NE001");
@@ -140,7 +140,7 @@ class LcypherFullCoverageE2ETest {
         ne.setProperty("vendor", "Huawei");
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
 
-        JsonNode json = JsonUtil.readTree(sdk.executeRaw("USING SNAPSHOT('s1', 1710000000) ON [NetworkElement] MATCH (n:NetworkElement) RETURN n PROJECT BY {NetworkElement:[name,type]}"));
+        JsonNode json = JsonUtil.readTree(sdk.execute("USING SNAPSHOT('s1', 1710000000) ON [NetworkElement] MATCH (n:NetworkElement) RETURN n PROJECT BY {NetworkElement:[name,type]}"));
         assertTrue(json.isArray(), "Result must be an array");
         assertEquals(1, json.size(), "Result must contain 1 row");
         JsonNode n = json.get(0).get("n");
@@ -164,7 +164,7 @@ class LcypherFullCoverageE2ETest {
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
         kpiAdapter.registerResponse("getKPIByNeIds", MockExternalAdapter.MockResponse.create().addEntity(kpi));
 
-        JsonNode json = JsonUtil.readTree(sdk.executeRaw("MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) RETURN ne, kpi"));
+        JsonNode json = JsonUtil.readTree(sdk.execute("MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) RETURN ne, kpi"));
         assertTrue(json.isArray(), "Result must be an array");
         assertEquals(1, json.size(), "Result must contain 1 row");
         JsonNode row = json.get(0);
@@ -188,7 +188,7 @@ class LcypherFullCoverageE2ETest {
         alarmAdapter.registerResponse("getAlarmsByNeIds", MockExternalAdapter.MockResponse.create().addEntity(alarm));
 
         String q = "MATCH (ne:NetworkElement)-[:NEHasKPI]->(target) RETURN target UNION ALL MATCH (ne:NetworkElement)-[:NEHasAlarms]->(target) RETURN target";
-        JsonNode json = JsonUtil.readTree(sdk.executeRaw(q));
+        JsonNode json = JsonUtil.readTree(sdk.execute(q));
         assertTrue(json.isArray(), "Result must be an array");
         assertEquals(2, json.size(), "UNION ALL across two data sources must return 2 rows");
         Set<String> labels = new LinkedHashSet<>();
@@ -220,7 +220,7 @@ class LcypherFullCoverageE2ETest {
             return all;
         }));
 
-        JsonNode json = JsonUtil.readTree(sdk.executeRaw("MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) WHERE kpi.value > 90 RETURN ne, kpi"));
+        JsonNode json = JsonUtil.readTree(sdk.execute("MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) WHERE kpi.value > 90 RETURN ne, kpi"));
         assertTrue(json.isArray(), "Result must be an array");
         assertEquals(2, json.size(), "褰撳墠杩囨护濂戠害浼氳繑鍥?2 鏉?KPI 璁板綍");
         Set<Double> values = new LinkedHashSet<>();

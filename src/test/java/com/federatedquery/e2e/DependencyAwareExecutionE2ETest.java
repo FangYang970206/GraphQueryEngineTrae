@@ -81,7 +81,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN p";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(1, json.size(), "Result should contain exactly 1 row");
 
@@ -151,7 +151,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN ne, ltp, target";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(3, json.size(), "Result should have exactly 3 rows");
 
@@ -183,7 +183,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN ne, ltp, target";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
         }
     }
@@ -232,7 +232,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2|LTPHasElement]->(target) RETURN p";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(1, json.size(), "Result should contain exactly 1 row");
 
@@ -285,7 +285,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2|LTPHasElement]->(target) RETURN p";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(1, json.size(), "Result must contain exactly 1 row");
 
@@ -336,7 +336,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2|LTPHasElement]->(target) RETURN ne, ltp, target";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(2, json.size(), "Should return exactly 2 rows");
 
@@ -373,7 +373,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE999'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN ne, ltp, target";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(0, json.size(), "Result should be empty when physical query returns no results");
         }
@@ -395,7 +395,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN ne, ltp, target";
 
-            assertThrows(GraphQueryException.class, () -> sdk.executeRaw(cypher));
+            assertThrows(GraphQueryException.class, () -> sdk.execute(cypher));
         }
 
         @Test
@@ -429,7 +429,7 @@ class DependencyAwareExecutionE2ETest {
 
             String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasPort]->(port)-[:PortHasKPI]->(target) RETURN ne, ltp, port, target";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
         }
     }

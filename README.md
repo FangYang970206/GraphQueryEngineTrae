@@ -42,17 +42,17 @@ import com.federatedquery.aggregator.*;
 
 // 创建组件
 CypherParserFacade parser = new CypherParserFacade();
-QueryRewriter rewriter = new QueryRewriter(registry, detector);
-FederatedExecutor executor = new FederatedExecutor(registry);
-ResultStitcher stitcher = new ResultStitcher();
-GlobalSorter sorter = new GlobalSorter();
-UnionDeduplicator deduplicator = new UnionDeduplicator();
+        QueryRewriter rewriter = new QueryRewriter(registry, detector);
+        FederatedExecutor executor = new FederatedExecutor(registry);
+        ResultStitcher stitcher = new ResultStitcher();
+        GlobalSorter sorter = new GlobalSorter();
+        UnionDeduplicator deduplicator = new UnionDeduplicator();
 
-// 创建 SDK
-GraphQuerySDK sdk = new GraphQuerySDK(parser, rewriter, executor, stitcher, sorter, deduplicator);
+        // 创建 SDK
+        GraphQuerySDK sdk = new GraphQuerySDK(parser, rewriter, executor, stitcher, sorter, deduplicator);
 
-// 执行查询
-String result = sdk.executeRaw("MATCH (n:NetworkElement) RETURN n");
+        // 执行查询
+        String result = sdk.execute("MATCH (n:NetworkElement) RETURN n");
 
 // 结果为 JSON 格式
 ```

@@ -12,7 +12,6 @@ import com.federatedquery.executor.ExecutionResult;
 import com.federatedquery.metadata.MetadataRegistry;
 import com.federatedquery.parser.CypherParserFacade;
 import com.federatedquery.plan.ExecutionPlan;
-import com.federatedquery.plan.GlobalContext;
 import com.federatedquery.plan.PhysicalQuery;
 import com.federatedquery.rewriter.QueryRewriter;
 import com.federatedquery.util.JsonUtil;
@@ -123,37 +122,11 @@ public class GraphQuerySDK {
         }
     }
     
-    public String executeRaw(String cypher) {
-        try {
-            Program ast = parser.parseCached(cypher);
-            return JsonUtil.toJson(executeQuery(ast, null));
-        } catch (GraphQueryException e) {
-            throw e;
-        } catch (CompletionException e) {
-            throw unwrapAsyncException(e);
-        } catch (Exception e) {
-            throw new GraphQueryException(ErrorCode.QUERY_EXECUTION_ERROR, e.getMessage(), e);
-        }
-    }
-    
     public String execute(String cypher, Map<String, Object> params) {
         try {
             Program ast = parser.parseCached(cypher);
             List<Map<String, Object>> results = executeQuery(ast, params);
             return JsonUtil.toJson(results);
-        } catch (GraphQueryException e) {
-            throw e;
-        } catch (CompletionException e) {
-            throw unwrapAsyncException(e);
-        } catch (Exception e) {
-            throw new GraphQueryException(ErrorCode.QUERY_EXECUTION_ERROR, e.getMessage(), e);
-        }
-    }
-    
-    public String executeRaw(String cypher, Map<String, Object> params) {
-        try {
-            Program ast = parser.parseCached(cypher);
-            return JsonUtil.toJson(executeQuery(ast, params));
         } catch (GraphQueryException e) {
             throw e;
         } catch (CompletionException e) {

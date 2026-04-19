@@ -102,7 +102,7 @@ class E2ETest {
         
         String cypher = "MATCH (ne:NetworkElement {name: 'NE001'})-[r:NEHasLtps|NEHasAlarms|NEHasKPI]->(target) RETURN ne, target";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
@@ -174,7 +174,7 @@ class E2ETest {
         
         String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN p";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
@@ -247,7 +247,7 @@ class E2ETest {
         String cypher = "MATCH path = (p:Person)-[r1:HAS_CHILD]->(p1)-[r2:HAS_CHILD]->(p2)-[r3:BORN_IN]->(c:Card) " +
                        "RETURN path";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
@@ -334,7 +334,7 @@ class E2ETest {
 
         String cypher = "MATCH p=(ne:NetworkElement {name: 'NE001'})-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN p";
 
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
 
         JsonNode json = JsonUtil.readTree(result);
         assertTrue(json.isArray(), "结果必须是数组");
@@ -370,7 +370,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) RETURN n";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
@@ -410,7 +410,7 @@ class E2ETest {
         
         String cypher = "MATCH (card:Card {name: 'card001'})-[r1:CardLocateInNe]->(ne) WHERE card.resId='2131221' RETURN ne";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
@@ -438,7 +438,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) RETURN n LIMIT 10";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
@@ -487,7 +487,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) WHERE n.name = 'NE001' RETURN n";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
@@ -521,7 +521,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) RETURN n ORDER BY n.name DESC LIMIT 5";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
@@ -556,7 +556,7 @@ class E2ETest {
         
         String cypher = "MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) RETURN ne, kpi";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
@@ -598,7 +598,7 @@ class E2ETest {
         
         String cypher = "MATCH (ne:NetworkElement)-[:NEHasLtps]->(ltp)-[:LTPHasKPI2]->(target) RETURN ne, ltp, target";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
@@ -651,7 +651,7 @@ class E2ETest {
         Map<String, Object> params = new HashMap<>();
         params.put("name", "NE001");
         
-        String result = sdk.executeRaw(cypher, params);
+        String result = sdk.execute(cypher, params);
         
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
@@ -685,7 +685,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) RETURN n ORDER BY n.name DESC";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         
@@ -723,7 +723,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) RETURN n SKIP 1 LIMIT 3";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         
@@ -743,7 +743,7 @@ class E2ETest {
         
         String cypher = "MATCH (ne:NetworkElement) WHERE ne.name = 'NE001' RETURN ne";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         
@@ -769,7 +769,7 @@ class E2ETest {
         
         String cypher = "MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) WHERE kpi.value > 90 RETURN ne, kpi";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         
@@ -792,7 +792,7 @@ class E2ETest {
         
         String cypher = "MATCH (card:Card {name: 'card001'}) RETURN card";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
@@ -843,7 +843,7 @@ class E2ETest {
         
         String cypher = "USING SNAPSHOT('latest', 1704067200) ON [Card] MATCH (card:Card) RETURN card";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         assertFalse(result.isEmpty(), "结果不能为空字符串");
@@ -872,7 +872,7 @@ class E2ETest {
         
         String cypher = "USING SNAPSHOT('snapshot1', 1704067200) ON [Card] MATCH (card:Card {name: 'card001'}) RETURN card";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         
@@ -898,7 +898,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) WITH n ORDER BY n.name LIMIT 2 RETURN n";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         
@@ -918,7 +918,7 @@ class E2ETest {
         
         String cypher = "MATCH (ne:NetworkElement) WITH ne RETURN ne";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         
@@ -947,7 +947,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) WITH n WHERE n.type = 'Router' RETURN n";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         
@@ -975,7 +975,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) WITH n ORDER BY n.name DESC SKIP 1 LIMIT 2 RETURN n";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         
@@ -989,7 +989,7 @@ class E2ETest {
     void unwindClauseTest() throws Exception {
         String cypher = "UNWIND [1, 2, 3] AS x RETURN x";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         JsonNode json = JsonUtil.readTree(result);
@@ -1007,7 +1007,7 @@ class E2ETest {
         
         String cypher = "OPTIONAL MATCH (n:NetworkElement) RETURN n";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         JsonNode json = JsonUtil.readTree(result);
@@ -1036,7 +1036,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) WHERE n.name IN ['NE001', 'NE003'] RETURN n";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         JsonNode json = JsonUtil.readTree(result);
@@ -1054,7 +1054,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) WHERE n.name IS NOT NULL RETURN n";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         JsonNode json = JsonUtil.readTree(result);
@@ -1083,7 +1083,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) WHERE n.name STARTS WITH 'NE' RETURN n";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         JsonNode json = JsonUtil.readTree(result);
@@ -1112,7 +1112,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) WHERE n.name ENDS WITH '01' RETURN n";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         JsonNode json = JsonUtil.readTree(result);
@@ -1140,7 +1140,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) WHERE n.name CONTAINS 'E00' RETURN n";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         JsonNode json = JsonUtil.readTree(result);
@@ -1168,7 +1168,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) RETURN n.name, CASE WHEN n.type = 'Router' THEN 'R' ELSE 'S' END AS typeCode";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         JsonNode json = JsonUtil.readTree(result);
@@ -1193,7 +1193,7 @@ class E2ETest {
         
         String cypher = "MATCH (n:NetworkElement) RETURN count(n) AS total";
         
-        String result = sdk.executeRaw(cypher);
+        String result = sdk.execute(cypher);
         
         assertNotNull(result, "结果不能为空");
         JsonNode json = JsonUtil.readTree(result);

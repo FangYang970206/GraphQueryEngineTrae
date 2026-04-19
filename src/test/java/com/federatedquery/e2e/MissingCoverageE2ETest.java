@@ -63,7 +63,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) OPTIONAL MATCH (n)-[:NEHasKPI]->(kpi) RETURN n, kpi";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -91,7 +91,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) OPTIONAL MATCH (n)-[:NEHasKPI]->(kpi) RETURN n, kpi";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(1, json.size(), "Result must contain 1 row");
 
@@ -117,7 +117,7 @@ class MissingCoverageE2ETest {
                     "OPTIONAL MATCH (n)-[:NEHasAlarms]->(alarm) " +
                     "RETURN n, kpi, alarm";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -143,7 +143,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN DISTINCT n.name AS name";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -165,7 +165,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN DISTINCT n.name, n.type";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -184,7 +184,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN DISTINCT n";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -213,7 +213,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN sum(n.value) AS total";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -234,7 +234,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN avg(n.value) AS average";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -255,7 +255,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN max(n.value) AS maximum";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -276,7 +276,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN min(n.value) AS minimum";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -295,7 +295,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN collect(n.name) AS names";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -314,7 +314,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN count(*) AS totalRows";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -342,7 +342,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN n ORDER BY n.name ASC, n.type DESC";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(4, json.size(), "Result should have 4 rows");
 
@@ -371,7 +371,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN n ORDER BY n.name ASC, n.type ASC, n.seq DESC";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(3, json.size(), "Result should have 3 rows");
 
@@ -396,7 +396,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN n.base ^ n.exp AS result";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -415,7 +415,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN n.a % n.b AS result";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -433,7 +433,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN -n.value AS result";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -452,7 +452,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN (n.a + n.b) * 2 - n.a / n.b AS result";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -474,7 +474,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN 'Hello' + ' ' + 'World' AS greeting";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -491,7 +491,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN concat(n.name, '-', n.type) AS combined";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -508,7 +508,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN substring(n.name, 0, 5) AS prefix";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -525,7 +525,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN length(n.name) AS nameLen";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -547,7 +547,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN [1, 2, 3] + [4, 5] AS combined";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -565,7 +565,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN n.values[1] AS second";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -583,7 +583,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN head(n.values) AS first";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -601,7 +601,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN last(n.values) AS lastElement";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -619,7 +619,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN size(n.values) AS listSize";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -636,7 +636,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN range(0, 5) AS numbers";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -660,7 +660,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) WHERE n.flagA XOR n.flagB RETURN n.name AS name";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -679,7 +679,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) WHERE NOT n.name = 'NE001' RETURN n.name AS name";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
         }
     }
@@ -700,7 +700,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN toBoolean(n.strTrue) AS boolVal";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -718,7 +718,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN toFloat(n.strFloat) AS floatValue";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -736,7 +736,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN toInteger(n.strInt) AS intVal";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -754,7 +754,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN toString(n.numVal) AS strVal";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -776,7 +776,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN id(n) AS nodeId, n.name AS name";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -794,7 +794,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN properties(n) AS props";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -812,7 +812,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN keys(n) AS propKeys";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -829,7 +829,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN labels(n) AS nodeLabels";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -847,7 +847,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN coalesce(n.optionalA, n.optionalB, 'default') AS result";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -870,7 +870,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN abs(n.value) AS absolute";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -888,7 +888,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN ceil(n.value) AS ceiling";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -906,7 +906,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN floor(n.value) AS floorVal";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -924,7 +924,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN round(n.value) AS rounded";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -942,7 +942,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN sign(n.value) AS signVal";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -968,7 +968,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (a:NetworkElement)-[r:NEHasLtps]->(b:LTP) RETURN r";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertTrue(json.size() >= 1, "Result should have at least 1 row");
 
@@ -989,7 +989,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n) WHERE n:NetworkElement RETURN n.name AS name";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -1010,7 +1010,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) WITH n.type AS type, count(*) AS cnt WHERE cnt > 1 RETURN type, cnt";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -1021,7 +1021,7 @@ class MissingCoverageE2ETest {
         void unwindClauseParses() throws Exception {
             String cypher = "UNWIND [1, 2, 3] AS x RETURN x";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -1039,7 +1039,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN n";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(0, json.size(), "Empty result should have 0 rows");
         }
@@ -1055,7 +1055,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) RETURN n.nonExistent AS value";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
             assertEquals(1, json.size(), "Result should have 1 row");
         }
@@ -1078,7 +1078,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) WHERE n.value >= 20 AND n.value <= 80 RETURN n.name AS name ORDER BY n.value";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
         }
 
@@ -1097,7 +1097,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) WHERE n.name STARTS WITH 'NE' AND n.priority > 0 AND n.type = 'Router' RETURN n";
 
-            JsonNode json = JsonUtil.readTree(sdk.executeRaw(cypher));
+            JsonNode json = JsonUtil.readTree(sdk.execute(cypher));
             assertTrue(json.isArray(), "Result must be an array");
         }
     }
@@ -1119,7 +1119,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (a:NetworkElement)-[:NEHasLtps*1..3]->(b) RETURN a, b";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
@@ -1136,7 +1136,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (a:NetworkElement)-[:NEHasLtps*]->(b) RETURN a, b";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
         }
     }
@@ -1156,7 +1156,7 @@ class MissingCoverageE2ETest {
 
             String cypher = "MATCH (n:NetworkElement) WHERE n.name =~ 'NE.*' RETURN n";
 
-            String result = sdk.executeRaw(cypher);
+            String result = sdk.execute(cypher);
             assertNotNull(result, "Result must not be null");
             JsonNode json = JsonUtil.readTree(result);
             assertTrue(json.isArray(), "Result must be an array");
