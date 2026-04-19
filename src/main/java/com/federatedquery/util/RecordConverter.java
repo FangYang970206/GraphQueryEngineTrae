@@ -1,11 +1,6 @@
-package com.federatedquery.connector;
+package com.federatedquery.util;
 
 import com.federatedquery.adapter.GraphEntity;
-import org.neo4j.driver.Value;
-import org.neo4j.driver.Values;
-import org.neo4j.driver.types.Node;
-import org.neo4j.driver.types.Path;
-import org.neo4j.driver.types.Relationship;
 
 import java.util.*;
 import java.util.stream.Collectors;

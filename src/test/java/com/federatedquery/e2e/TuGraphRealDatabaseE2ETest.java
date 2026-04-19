@@ -16,6 +16,7 @@ import com.federatedquery.rewriter.VirtualEdgeDetector;
 import com.federatedquery.reliability.WhereConditionPushdown;
 import com.federatedquery.testutil.GraphQueryMetaFactory;
 import com.federatedquery.sdk.GraphQuerySDK;
+import com.federatedquery.util.RecordConverter;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.DisabledIf;
 import org.neo4j.driver.Record;
