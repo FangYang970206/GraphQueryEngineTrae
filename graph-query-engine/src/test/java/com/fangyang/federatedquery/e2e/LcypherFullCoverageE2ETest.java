@@ -213,8 +213,11 @@ class LcypherFullCoverageE2ETest {
             List<GraphEntity> all = new ArrayList<>();
             all.add(kpiHigh);
             all.add(kpiLow);
-            Object filterValue = query.getFilters().get("value");
-            if (filterValue instanceof Number && ((Number) filterValue).doubleValue() == 90.0) {
+            if (!query.getFilterConditions().isEmpty()
+                    && "value".equals(query.getFilterConditions().get(0).getKey())
+                    && ">".equals(query.getFilterConditions().get(0).getOperator())
+                    && query.getFilterConditions().get(0).getValue() instanceof Number
+                    && ((Number) query.getFilterConditions().get(0).getValue()).doubleValue() == 90.0) {
                 return List.of(kpiHigh);
             }
             return all;
@@ -222,11 +225,8 @@ class LcypherFullCoverageE2ETest {
 
         JsonNode json = JsonUtil.readTree(sdk.execute("MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) WHERE kpi.value > 90 RETURN ne, kpi"));
         assertTrue(json.isArray(), "Result must be an array");
-        assertEquals(2, json.size(), "褰撳墠杩囨护濂戠害浼氳繑鍥?2 鏉?KPI 璁板綍");
-        Set<Double> values = new LinkedHashSet<>();
-        values.add(json.get(0).get("kpi").get("value").asDouble());
-        values.add(json.get(1).get("kpi").get("value").asDouble());
-        assertEquals(Set.of(95.0, 75.0), values, "褰撳墠杩斿洖鍊煎簲绋冲畾鍖呭惈 95.0 涓?75.0 涓ゆ潯 KPI");
+        assertEquals(1, json.size(), "应只返回满足 > 90 的 KPI 记录");
+        assertEquals(95.0, json.get(0).get("kpi").get("value").asDouble(), "应只保留 95.0 这条 KPI");
     }
 
     private GraphEntity node(String id, String label, String variableName) {

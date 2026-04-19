@@ -1,9 +1,10 @@
 package com.fangyang.federatedquery.plan;
 
+import com.fangyang.datasource.QueryFilter;
 import lombok.Data;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -14,14 +15,15 @@ public class ExternalQuery {
     private String operator;
     private String edgeType;
     private String targetLabel;
-    private Map<String, Object> inputMapping = new HashMap<>();
+    private Map<String, Object> inputMapping = new LinkedHashMap<>();
     private List<String> inputIds = new ArrayList<>();
     private String inputIdField;
     private String outputIdField;
     private List<String> outputVariables = new ArrayList<>();
     private List<String> outputFields = new ArrayList<>();
-    private Map<String, Object> filters = new HashMap<>();
-    private Map<String, Object> parameters = new HashMap<>();
+    private Map<String, Object> filters = new LinkedHashMap<>();
+    private List<QueryFilter> filterConditions = new ArrayList<>();
+    private Map<String, Object> parameters = new LinkedHashMap<>();
     private boolean batched = false;
     private String snapshotName;
     private Object snapshotTime;
@@ -47,5 +49,8 @@ public class ExternalQuery {
     public void addInputId(String id) { this.inputIds.add(id); }
     public void addOutputVariable(String variable) { this.outputVariables.add(variable); }
     public void addFilter(String key, Object value) { this.filters.put(key, value); }
+    public void addFilterCondition(String key, String operator, Object value) {
+        this.filterConditions.add(new QueryFilter(key, operator, value));
+    }
     public void addParameter(String key, Object value) { this.parameters.put(key, value); }
 }

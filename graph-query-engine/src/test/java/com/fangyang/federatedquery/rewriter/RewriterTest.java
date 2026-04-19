@@ -170,5 +170,37 @@ class RewriterTest {
         assertNotNull(originalCypher, "原始Cypher不能为空");
         assertTrue(originalCypher.contains("WHERE"), "原始Cypher必须包含WHERE");
         assertTrue(originalCypher.contains("NE001"), "原始Cypher必须包含NE001");
+        assertTrue(plan.getGlobalContext().getPendingFilters().isEmpty(), "已下推的纯物理条件不应重复进入 pendingFilters");
+    }
+
+    @Test
+    @DisplayName("Virtual filter keeps operator semantics")
+    void virtualFilterKeepsOperator() {
+        String cypher = "MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) WHERE kpi.value > 90 RETURN ne, kpi";
+        Program program = parser.parse(cypher);
+
+        ExecutionPlan plan = rewriter.rewrite(program);
+
+        assertEquals(1, plan.getExternalQueries().size(), "应生成 1 条外部查询");
+        ExternalQuery query = plan.getExternalQueries().get(0);
+        assertEquals(1, query.getFilterConditions().size(), "应保留 1 条带操作符的过滤条件");
+        assertEquals("value", query.getFilterConditions().get(0).getKey(), "应保留过滤字段");
+        assertEquals(">", query.getFilterConditions().get(0).getOperator(), "应保留比较操作符");
+        assertEquals(90L, ((Number) query.getFilterConditions().get(0).getValue()).longValue(), "应保留过滤值");
+        assertTrue(plan.getGlobalContext().getPendingFilters().isEmpty(), "可安全下推的虚拟条件不应再进入 pendingFilters");
+    }
+
+    @Test
+    @DisplayName("Complex WHERE stays as post filter")
+    void complexWhereBecomesPostFilter() {
+        String cypher = "MATCH (n:NetworkElement) WHERE n.name = 'NE001' OR n.name = 'NE002' RETURN n";
+        Program program = parser.parse(cypher);
+
+        ExecutionPlan plan = rewriter.rewrite(program);
+
+        assertEquals(1, plan.getPhysicalQueries().size(), "应生成物理查询");
+        assertFalse(plan.getPhysicalQueries().get(0).getCypher().contains("WHERE"), "复杂逻辑不应被错误下推");
+        assertEquals(1, plan.getGlobalContext().getPendingFilters().size(), "复杂表达式应作为单条后置过滤保留");
+        assertNotNull(plan.getGlobalContext().getPendingFilters().get(0).getOriginalExpression(), "应保留原始表达式");
     }
 }

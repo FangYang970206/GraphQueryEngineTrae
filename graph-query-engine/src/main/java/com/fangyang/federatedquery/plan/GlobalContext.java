@@ -14,6 +14,7 @@ import java.util.Map;
 public class GlobalContext {
     private Map<String, Object> bindings = new HashMap<>();
     private List<WhereCondition> pendingFilters = new ArrayList<>();
+    private List<WhereCondition> validationFilters = new ArrayList<>();
     private OrderSpec globalOrder;
     private LimitSpec globalLimit;
     private ProjectBy projectBy;
@@ -28,6 +29,10 @@ public class GlobalContext {
     
     public void addPendingFilter(WhereCondition filter) {
         this.pendingFilters.add(filter);
+    }
+
+    public void addValidationFilter(WhereCondition filter) {
+        this.validationFilters.add(filter);
     }
     
     @Data

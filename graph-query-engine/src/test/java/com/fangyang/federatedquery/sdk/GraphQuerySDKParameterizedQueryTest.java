@@ -1,9 +1,12 @@
 package com.fangyang.federatedquery.sdk;
 
 import com.fangyang.datasource.TuGraphConnector;
-
 import com.fangyang.federatedquery.executor.FederatedExecutor;
+import com.fangyang.federatedquery.exception.ErrorCode;
 import com.fangyang.federatedquery.parser.CypherParserFacade;
+import com.fangyang.federatedquery.parser.CypherASTVisitor;
+import com.fangyang.federatedquery.exception.GraphQueryException;
+import com.fangyang.federatedquery.plan.ExecutionPlan;
 import com.fangyang.federatedquery.rewriter.QueryRewriter;
 import com.fangyang.federatedquery.aggregator.UnionDeduplicator;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +33,7 @@ class GraphQuerySDKParameterizedQueryTest {
     
     @BeforeEach
     void setUp() {
-        parser = new CypherParserFacade();
+        parser = new CypherParserFacade(new CypherASTVisitor());
         rewriter = mock(QueryRewriter.class);
         executor = mock(FederatedExecutor.class);
         deduplicator = new UnionDeduplicator();
@@ -168,6 +171,61 @@ class GraphQuerySDKParameterizedQueryTest {
         assertEquals(1, result.size());
         
         verify(mockConnector).executeQuery(eq(cypher), eq("name"), eq("张"), eq("fullname"), eq("张三"));
+    }
+
+    @Test
+    @DisplayName("direct execution 按查询中参数出现顺序传参")
+    void executeUsesDirectExecutionParameterOrder() {
+        String cypher = "MATCH (n:Person) WHERE n.age > $age AND n.name = $name RETURN n";
+        Map<String, Object> params = new HashMap<>();
+        params.put("name", "李四");
+        params.put("age", 30);
+        List<Record> mockRecords = createMockRecords("n", "Person", Map.of("name", "李四", "age", 35));
+
+        when(rewriter.rewrite(any())).thenReturn(createDirectExecutionPlan());
+        when(mockConnector.executeQuery(eq(cypher), any(Object[].class)))
+                .thenReturn(mockRecords);
+
+        sdk.executeRecords(cypher, params);
+
+        verify(mockConnector).executeQuery(eq(cypher), eq(30), eq("李四"));
+    }
+
+    @Test
+    @DisplayName("direct execution 保留重复参数出现顺序")
+    void executeUsesRepeatedDirectExecutionParameters() {
+        String cypher = "MATCH (n:Person) WHERE n.name = $name OR n.alias = $name RETURN n";
+        Map<String, Object> params = Map.of("name", "张三");
+        List<Record> mockRecords = createMockRecords("n", "Person", Map.of("name", "张三"));
+
+        when(rewriter.rewrite(any())).thenReturn(createDirectExecutionPlan());
+        when(mockConnector.executeQuery(eq(cypher), any(Object[].class)))
+                .thenReturn(mockRecords);
+
+        sdk.execute(cypher, params);
+
+        verify(mockConnector).executeQuery(eq(cypher), eq("张三"), eq("张三"));
+    }
+
+    @Test
+    @DisplayName("direct execution 缺失参数时抛出异常")
+    void executeFailsWhenDirectExecutionParameterMissing() {
+        String cypher = "MATCH (n:Person) WHERE n.name = $name RETURN n";
+
+        when(rewriter.rewrite(any())).thenReturn(createDirectExecutionPlan());
+
+        GraphQueryException thrown = assertThrows(GraphQueryException.class,
+                () -> sdk.executeRecords(cypher, Collections.emptyMap()));
+        assertEquals(ErrorCode.QUERY_EXECUTION_ERROR, thrown.getErrorCode());
+        assertNotNull(thrown.getMessage());
+        verify(mockConnector, never()).executeQuery(eq(cypher), any(Object[].class));
+    }
+
+    private ExecutionPlan createDirectExecutionPlan() {
+        ExecutionPlan plan = new ExecutionPlan();
+        plan.setDirectExecution(true);
+        plan.setHasVirtualElements(false);
+        return plan;
     }
     
     private List<Record> createMockRecords(String varName, String label, Map<String, Object> properties) {

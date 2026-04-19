@@ -1,14 +1,15 @@
 package com.fangyang.federatedquery.reliability;
 
 import com.fangyang.federatedquery.ast.*;
-import com.fangyang.metadata.LabelMetadata;
 import com.fangyang.metadata.MetadataQueryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Component
@@ -22,47 +23,64 @@ public class WhereConditionPushdown {
     
     public PushdownResult analyze(WhereClause where, Pattern pattern) {
         PushdownResult result = new PushdownResult();
-        
+
         if (where == null || where.getExpression() == null) {
             return result;
         }
-        
+
         Set<String> virtualVariables = extractVirtualVariables(pattern);
         Set<String> physicalVariables = extractPhysicalVariables(pattern);
-        
+
         extractConditions(where.getExpression(), virtualVariables, physicalVariables, result);
-        
+
         return result;
     }
-    
-    private void extractConditions(Expression expr, Set<String> virtualVars, 
+
+    private void extractConditions(Expression expr, Set<String> virtualVars,
                                    Set<String> physicalVars, PushdownResult result) {
         if (expr instanceof LogicalExpression) {
             LogicalExpression logic = (LogicalExpression) expr;
+            if (!"AND".equalsIgnoreCase(logic.getOperator())) {
+                result.addPostFilterCondition(Condition.forPostFilter(expr));
+                return;
+            }
             for (Expression operand : logic.getOperands()) {
                 extractConditions(operand, virtualVars, physicalVars, result);
             }
-        } else if (expr instanceof Comparison) {
-            Comparison comp = (Comparison) expr;
-            Condition condition = extractCondition(comp);
-            
-            if (condition != null) {
-                if (virtualVars.contains(condition.getVariable())) {
-                    result.addVirtualCondition(condition);
-                } else if (physicalVars.contains(condition.getVariable())) {
-                    result.addPhysicalCondition(condition);
-                } else {
-                    result.addUnknownCondition(condition);
-                }
-            }
+            return;
+        }
+
+        if (!(expr instanceof Comparison)) {
+            result.addPostFilterCondition(Condition.forPostFilter(expr));
+            return;
+        }
+
+        Comparison comp = (Comparison) expr;
+        Condition condition = extractCondition(comp);
+        if (condition == null) {
+            result.addPostFilterCondition(Condition.forPostFilter(expr));
+            return;
+        }
+
+        if (virtualVars.contains(condition.getVariable())) {
+            result.addVirtualCondition(condition);
+        } else if (physicalVars.contains(condition.getVariable())) {
+            result.addPhysicalCondition(condition);
+        } else {
+            result.addUnknownCondition(condition);
+            result.addPostFilterCondition(condition);
         }
     }
-    
+
     private Condition extractCondition(Comparison comp) {
+        if (comp == null || comp.getLeft() == null) {
+            return null;
+        }
+
         Condition condition = new Condition();
         condition.setOperator(comp.getOperator());
         condition.setOriginalExpression(comp);
-        
+
         if (comp.getLeft() instanceof PropertyAccess) {
             PropertyAccess pa = (PropertyAccess) comp.getLeft();
             if (pa.getTarget() instanceof Variable) {
@@ -71,27 +89,97 @@ public class WhereConditionPushdown {
             condition.setProperty(pa.getPropertyName());
         } else if (comp.getLeft() instanceof Variable) {
             condition.setVariable(((Variable) comp.getLeft()).getName());
+        } else {
+            return null;
         }
-        
-        if (comp.getRight() instanceof Literal) {
-            condition.setValue(((Literal) comp.getRight()).getValue());
+
+        if (condition.getVariable() == null || !isPushdownSupportedOperator(comp.getOperator())) {
+            return null;
         }
-        
+
+        if (isUnaryOperator(comp.getOperator())) {
+            return condition;
+        }
+
+        ResolvedValue resolvedValue = resolveStaticValue(comp.getRight());
+        if (!resolvedValue.isResolved()) {
+            return null;
+        }
+        condition.setValue(resolvedValue.getValue());
+
         return condition;
     }
-    
+
+    private boolean isPushdownSupportedOperator(String operator) {
+        if (operator == null || operator.isEmpty()) {
+            return false;
+        }
+        switch (operator.toUpperCase()) {
+            case "=":
+            case "==":
+            case "<>":
+            case "!=":
+            case ">":
+            case ">=":
+            case "<":
+            case "<=":
+            case "IN":
+            case "CONTAINS":
+            case "STARTS WITH":
+            case "ENDS WITH":
+            case "IS NULL":
+            case "IS NOT NULL":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private boolean isUnaryOperator(String operator) {
+        return "IS NULL".equalsIgnoreCase(operator) || "IS NOT NULL".equalsIgnoreCase(operator);
+    }
+
+    private ResolvedValue resolveStaticValue(Expression expr) {
+        if (expr instanceof Literal) {
+            return ResolvedValue.resolved(((Literal) expr).getValue());
+        }
+        if (expr instanceof ListExpression) {
+            List<Object> values = new ArrayList<>();
+            for (Expression element : ((ListExpression) expr).getElements()) {
+                ResolvedValue resolved = resolveStaticValue(element);
+                if (!resolved.isResolved()) {
+                    return ResolvedValue.unresolved();
+                }
+                values.add(resolved.getValue());
+            }
+            return ResolvedValue.resolved(values);
+        }
+        if (expr instanceof MapExpression) {
+            Map<String, Object> values = new LinkedHashMap<>();
+            for (Map.Entry<String, Expression> entry : ((MapExpression) expr).getEntries().entrySet()) {
+                ResolvedValue resolved = resolveStaticValue(entry.getValue());
+                if (!resolved.isResolved()) {
+                    return ResolvedValue.unresolved();
+                }
+                values.put(entry.getKey(), resolved.getValue());
+            }
+            return ResolvedValue.resolved(values);
+        }
+        return ResolvedValue.unresolved();
+    }
+
     private Set<String> extractVirtualVariables(Pattern pattern) {
         Set<String> vars = new HashSet<>();
-        
+
         for (Pattern.PatternPart part : pattern.getPatternParts()) {
             if (part.getPatternElement() != null) {
                 extractVirtualVariablesFromElement(part.getPatternElement(), vars);
             }
         }
-        
+
         return vars;
     }
-    
+
     private void extractVirtualVariablesFromElement(Pattern.PatternElement element, Set<String> vars) {
         NodePattern node = element.getNodePattern();
         if (node != null && isVirtualNode(node)) {
@@ -101,33 +189,34 @@ public class WhereConditionPushdown {
         }
         
         for (Pattern.PatternElementChain chain : element.getChains()) {
-            if (isVirtualRelationship(chain.getRelationshipPattern())) {
+            boolean virtualRelationship = isVirtualRelationship(chain.getRelationshipPattern());
+            if (virtualRelationship) {
                 if (chain.getRelationshipPattern().getVariable() != null) {
                     vars.add(chain.getRelationshipPattern().getVariable());
                 }
             }
             
             NodePattern endNode = chain.getNodePattern();
-            if (endNode != null && isVirtualNode(endNode)) {
+            if (endNode != null && (virtualRelationship || isVirtualNode(endNode))) {
                 if (endNode.getVariable() != null) {
                     vars.add(endNode.getVariable());
                 }
             }
         }
     }
-    
+
     private Set<String> extractPhysicalVariables(Pattern pattern) {
         Set<String> vars = new HashSet<>();
-        
+
         for (Pattern.PatternPart part : pattern.getPatternParts()) {
             if (part.getPatternElement() != null) {
                 extractPhysicalVariablesFromElement(part.getPatternElement(), vars);
             }
         }
-        
+
         return vars;
     }
-    
+
     private void extractPhysicalVariablesFromElement(Pattern.PatternElement element, Set<String> vars) {
         NodePattern node = element.getNodePattern();
         if (node != null && !isVirtualNode(node)) {
@@ -137,21 +226,22 @@ public class WhereConditionPushdown {
         }
         
         for (Pattern.PatternElementChain chain : element.getChains()) {
-            if (!isVirtualRelationship(chain.getRelationshipPattern())) {
+            boolean virtualRelationship = isVirtualRelationship(chain.getRelationshipPattern());
+            if (!virtualRelationship) {
                 if (chain.getRelationshipPattern().getVariable() != null) {
                     vars.add(chain.getRelationshipPattern().getVariable());
                 }
             }
             
             NodePattern endNode = chain.getNodePattern();
-            if (endNode != null && !isVirtualNode(endNode)) {
+            if (endNode != null && !virtualRelationship && !isVirtualNode(endNode)) {
                 if (endNode.getVariable() != null) {
                     vars.add(endNode.getVariable());
                 }
             }
         }
     }
-    
+
     private boolean isVirtualNode(NodePattern node) {
         for (String label : node.getLabels()) {
             if (metadataQueryService.isVirtualLabel(label)) {
@@ -160,7 +250,7 @@ public class WhereConditionPushdown {
         }
         return false;
     }
-    
+
     private boolean isVirtualRelationship(RelationshipPattern rel) {
         for (String type : rel.getRelationshipTypes()) {
             if (metadataQueryService.isVirtualEdge(type)) {
@@ -169,95 +259,153 @@ public class WhereConditionPushdown {
         }
         return false;
     }
-    
+
     public static class PushdownResult {
         private List<Condition> physicalConditions = new ArrayList<>();
         private List<Condition> virtualConditions = new ArrayList<>();
         private List<Condition> unknownConditions = new ArrayList<>();
-        
+        private List<Condition> postFilterConditions = new ArrayList<>();
+
         public List<Condition> getPhysicalConditions() {
             return physicalConditions;
         }
-        
+
         public void addPhysicalCondition(Condition condition) {
             this.physicalConditions.add(condition);
         }
-        
+
         public List<Condition> getVirtualConditions() {
             return virtualConditions;
         }
-        
+
         public void addVirtualCondition(Condition condition) {
             this.virtualConditions.add(condition);
         }
-        
+
         public List<Condition> getUnknownConditions() {
             return unknownConditions;
         }
-        
+
         public void addUnknownCondition(Condition condition) {
             this.unknownConditions.add(condition);
         }
+
+        public List<Condition> getPostFilterConditions() {
+            return postFilterConditions;
+        }
+
+        public void addPostFilterCondition(Condition condition) {
+            this.postFilterConditions.add(condition);
+        }
     }
-    
+
     public static class Condition {
         private String variable;
         private String property;
         private String operator;
         private Object value;
         private Expression originalExpression;
-        
+
+        public static Condition forPostFilter(Expression expression) {
+            Condition condition = new Condition();
+            condition.setOriginalExpression(expression);
+            return condition;
+        }
+
         public String getVariable() {
             return variable;
         }
-        
+
         public void setVariable(String variable) {
             this.variable = variable;
         }
-        
+
         public String getProperty() {
             return property;
         }
-        
+
         public void setProperty(String property) {
             this.property = property;
         }
-        
+
         public String getOperator() {
             return operator;
         }
-        
+
         public void setOperator(String operator) {
             this.operator = operator;
         }
-        
+
         public Object getValue() {
             return value;
         }
-        
+
         public void setValue(Object value) {
             this.value = value;
         }
-        
+
         public Expression getOriginalExpression() {
             return originalExpression;
         }
-        
+
         public void setOriginalExpression(Expression originalExpression) {
             this.originalExpression = originalExpression;
         }
-        
+
         public String toCypher() {
+            if (originalExpression != null) {
+                return originalExpression.toCypher();
+            }
             if (property != null) {
                 return variable + "." + property + " " + operator + " " + formatValue(value);
             }
             return variable + " " + operator + " " + formatValue(value);
         }
-        
+
         private String formatValue(Object value) {
             if (value == null) return "NULL";
             if (value instanceof String) return "'" + value + "'";
+            if (value instanceof List) {
+                List<String> parts = new ArrayList<>();
+                for (Object item : (List<?>) value) {
+                    parts.add(formatValue(item));
+                }
+                return "[" + String.join(", ", parts) + "]";
+            }
+            if (value instanceof Map) {
+                List<String> parts = new ArrayList<>();
+                for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                    parts.add(entry.getKey() + ": " + formatValue(entry.getValue()));
+                }
+                return "{" + String.join(", ", parts) + "}";
+            }
             return value.toString();
+        }
+    }
+
+    private static class ResolvedValue {
+        private final boolean resolved;
+        private final Object value;
+
+        private ResolvedValue(boolean resolved, Object value) {
+            this.resolved = resolved;
+            this.value = value;
+        }
+
+        public static ResolvedValue resolved(Object value) {
+            return new ResolvedValue(true, value);
+        }
+
+        public static ResolvedValue unresolved() {
+            return new ResolvedValue(false, null);
+        }
+
+        public boolean isResolved() {
+            return resolved;
+        }
+
+        public Object getValue() {
+            return value;
         }
     }
 }

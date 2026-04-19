@@ -2,6 +2,7 @@ package com.fangyang.federatedquery.adapter;
 
 import com.fangyang.datasource.DataSourceAdapter;
 import com.fangyang.datasource.DataSourceQueryParams;
+import com.fangyang.datasource.QueryFilter;
 import com.fangyang.federatedquery.model.GraphEntity;
 import com.fangyang.federatedquery.model.QueryResult;
 import com.fangyang.federatedquery.exception.ErrorCode;
@@ -119,7 +120,12 @@ public class MockExternalAdapter implements DataSourceAdapter {
     }
 
     private List<GraphEntity> filterEntities(ExternalQuery query, List<GraphEntity> entities) {
-        if (query == null || query.getFilters() == null || query.getFilters().isEmpty() || entities == null) {
+        if (query == null || entities == null) {
+            return entities;
+        }
+        boolean hasMapFilters = query.getFilters() != null && !query.getFilters().isEmpty();
+        boolean hasFilterConditions = query.getFilterConditions() != null && !query.getFilterConditions().isEmpty();
+        if (!hasMapFilters && !hasFilterConditions) {
             return entities;
         }
 
@@ -130,28 +136,39 @@ public class MockExternalAdapter implements DataSourceAdapter {
             }
 
             boolean matches = true;
-            for (Map.Entry<String, Object> filter : query.getFilters().entrySet()) {
-                String key = filter.getKey();
-                Object expected = filter.getValue();
-                if (expected == null) {
-                    continue;
-                }
+            if (hasMapFilters) {
+                for (Map.Entry<String, Object> filter : query.getFilters().entrySet()) {
+                    String key = filter.getKey();
+                    Object expected = filter.getValue();
+                    if (expected == null) {
+                        continue;
+                    }
 
-                if ("_label".equals(key)) {
-                    if (!expected.equals(entity.getLabel())) {
+                    if ("_label".equals(key)) {
+                        if (!expected.equals(entity.getLabel())) {
+                            matches = false;
+                            break;
+                        }
+                        continue;
+                    }
+
+                    Object actual = getEntityValue(entity, key);
+                    if (actual == null || !expected.equals(actual)) {
                         matches = false;
                         break;
                     }
-                    continue;
                 }
+            }
 
-                Object actual = entity.getProperties() != null ? entity.getProperties().get(key) : null;
-                if (actual == null && "name".equals(key) && entity.getProperties() != null) {
-                    actual = entity.getProperties().get("MENAME");
-                }
-                if (actual == null || !expected.equals(actual)) {
-                    matches = false;
-                    break;
+            if (matches && hasFilterConditions) {
+                for (QueryFilter filterCondition : query.getFilterConditions()) {
+                    Object actual = "_label".equals(filterCondition.getKey())
+                            ? entity.getLabel()
+                            : getEntityValue(entity, filterCondition.getKey());
+                    if (!matchesFilterCondition(actual, filterCondition)) {
+                        matches = false;
+                        break;
+                    }
                 }
             }
 
@@ -161,6 +178,71 @@ public class MockExternalAdapter implements DataSourceAdapter {
         }
 
         return filtered;
+    }
+
+    private Object getEntityValue(GraphEntity entity, String key) {
+        if (entity == null) {
+            return null;
+        }
+        if (entity.getProperties() == null) {
+            return null;
+        }
+        Object actual = entity.getProperties().get(key);
+        if (actual == null && "name".equals(key)) {
+            actual = entity.getProperties().get("MENAME");
+        }
+        return actual;
+    }
+
+    private boolean matchesFilterCondition(Object actual, QueryFilter filterCondition) {
+        String operator = filterCondition.getOperator();
+        Object expected = filterCondition.getValue();
+        if ("IS NULL".equals(operator)) {
+            return actual == null;
+        }
+        if ("IS NOT NULL".equals(operator)) {
+            return actual != null;
+        }
+        if (actual == null) {
+            return false;
+        }
+
+        switch (operator) {
+            case "=":
+            case "==":
+                return actual.equals(expected);
+            case "<>":
+            case "!=":
+                return !actual.equals(expected);
+            case ">":
+                return compareValues(actual, expected) > 0;
+            case ">=":
+                return compareValues(actual, expected) >= 0;
+            case "<":
+                return compareValues(actual, expected) < 0;
+            case "<=":
+                return compareValues(actual, expected) <= 0;
+            case "IN":
+                return expected instanceof Collection && ((Collection<?>) expected).contains(actual);
+            case "CONTAINS":
+                return actual.toString().contains(String.valueOf(expected));
+            case "STARTS WITH":
+                return actual.toString().startsWith(String.valueOf(expected));
+            case "ENDS WITH":
+                return actual.toString().endsWith(String.valueOf(expected));
+            default:
+                return actual.equals(expected);
+        }
+    }
+
+    private int compareValues(Object actual, Object expected) {
+        if (actual instanceof Number && expected instanceof Number) {
+            return Double.compare(((Number) actual).doubleValue(), ((Number) expected).doubleValue());
+        }
+        if (actual instanceof Comparable && expected instanceof Comparable) {
+            return ((Comparable) actual).compareTo(expected);
+        }
+        return String.valueOf(actual).compareTo(String.valueOf(expected));
     }
     
     @Override
@@ -229,6 +311,9 @@ public class MockExternalAdapter implements DataSourceAdapter {
         query.setOutputFields(params.getOutputFields());
         if (params.getFilters() != null) {
             query.getFilters().putAll(params.getFilters());
+        }
+        if (params.getFilterConditions() != null) {
+            query.getFilterConditions().addAll(params.getFilterConditions());
         }
         if (params.getParameters() != null) {
             query.getParameters().putAll(params.getParameters());

@@ -19,6 +19,7 @@ import org.neo4j.driver.Record;
 
 import java.util.*;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -254,6 +255,36 @@ class ExecutorTest {
         
         CompletionException thrown = assertThrows(CompletionException.class, () -> executor.execute(plan).join());
         assertTrue(thrown.getCause() instanceof GraphQueryException, "Cause should be GraphQueryException");
+    }
+
+    @Test
+    @DisplayName("External query retries without blocking semantics leakage")
+    void externalQueryRetriesUntilSuccess() {
+        AtomicInteger attempts = new AtomicInteger();
+        mockAdapter.registerResponse("flakyOp", MockExternalAdapter.MockResponse.create().generator(query -> {
+            if (attempts.getAndIncrement() < 2) {
+                throw new GraphQueryException(ErrorCode.EXTERNAL_DATASOURCE_ERROR, "temporary failure");
+            }
+            GraphEntity entity = GraphEntity.node("1", "Test");
+            entity.setVariableName("target");
+            entity.setProperty("name", "recovered");
+            return List.of(entity);
+        }));
+
+        ExecutionPlan plan = new ExecutionPlan();
+        plan.setPlanId(UUID.randomUUID().toString());
+
+        ExternalQuery query = new ExternalQuery();
+        query.setId("q-retry");
+        query.setDataSource("mock-service");
+        query.setOperator("flakyOp");
+        plan.addExternalQuery(query);
+
+        ExecutionResult result = executor.execute(plan).join();
+
+        assertEquals(3, attempts.get(), "应执行 3 次后成功");
+        assertEquals(1, result.getExternalResults().size(), "恢复后应返回 1 条外部结果");
+        assertEquals(1, result.getExternalResults().get(0).getEntities().size(), "恢复后应返回实体");
     }
 
     @Test

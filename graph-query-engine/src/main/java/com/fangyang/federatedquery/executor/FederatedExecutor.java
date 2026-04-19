@@ -298,30 +298,49 @@ public class FederatedExecutor {
         return runOnExecutor(() -> executeAdapterQuery(adapter, query))
                 .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                 .thenApply(result -> resultEnricher.applyExternalQueryMetadata(query, result))
-                .exceptionally(e -> {
+                .handle((result, throwable) -> {
+                    CompletableFuture<QueryResult> nextStep;
+                    if (throwable == null) {
+                        nextStep = CompletableFuture.completedFuture(result);
+                        return nextStep;
+                    }
+
+                    Throwable cause = unwrapThrowable(throwable);
                     if (attempt < maxRetries) {
                         log.warn("External query attempt {}/{} failed for data source: {}, retrying...",
-                                attempt + 1, maxRetries + 1, query.getDataSource());
-                        return null;
+                                attempt + 1, maxRetries + 1, query.getDataSource(), cause);
+                        nextStep = scheduleRetry(adapter, query, maxRetries, attempt + 1);
+                        return nextStep;
                     }
+
                     log.error("External query failed after {} attempts [queryId={}] [dataSource={}]",
-                            maxRetries + 1, query.getId(), query.getDataSource());
-                    throw new GraphQueryException(ErrorCode.EXTERNAL_DATASOURCE_ERROR,
-                            "External query failed after " + (maxRetries + 1) + " attempts", e);
+                            maxRetries + 1, query.getId(), query.getDataSource(), cause);
+                    nextStep = CompletableFuture.failedFuture(new GraphQueryException(
+                            ErrorCode.EXTERNAL_DATASOURCE_ERROR,
+                            "External query failed after " + (maxRetries + 1) + " attempts",
+                            cause));
+                    return nextStep;
                 })
-                .thenCompose(result -> {
-                    if (result == null && attempt < maxRetries) {
-                        try {
-                            Thread.sleep(RETRY_DELAY_MS * (attempt + 1));
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                            throw new GraphQueryException(ErrorCode.EXTERNAL_DATASOURCE_ERROR,
-                                    "Retry interrupted", ie);
-                        }
-                        return executeWithRetryInternal(adapter, query, maxRetries, attempt + 1);
-                    }
-                    return CompletableFuture.completedFuture(result);
-                });
+                .thenCompose((CompletableFuture<QueryResult> future) -> future);
+    }
+
+    private CompletableFuture<QueryResult> scheduleRetry(DataSourceAdapter adapter,
+                                                         ExternalQuery query,
+                                                         int maxRetries,
+                                                         int nextAttempt) {
+        Executor delayedExecutor = CompletableFuture.delayedExecutor(
+                RETRY_DELAY_MS * nextAttempt,
+                TimeUnit.MILLISECONDS);
+        return CompletableFuture.completedFuture(null)
+                .thenRunAsync(() -> { }, delayedExecutor)
+                .thenCompose(ignored -> executeWithRetryInternal(adapter, query, maxRetries, nextAttempt));
+    }
+
+    private Throwable unwrapThrowable(Throwable throwable) {
+        if (throwable instanceof CompletionException || throwable instanceof ExecutionException) {
+            return throwable.getCause() != null ? throwable.getCause() : throwable;
+        }
+        return throwable;
     }
 
     private QueryResult executeAdapterQuery(DataSourceAdapter adapter, ExternalQuery query) {
@@ -357,6 +376,7 @@ public class FederatedExecutor {
         params.setOutputVariables(query.getOutputVariables());
         params.setOutputFields(query.getOutputFields());
         params.setFilters(query.getFilters());
+        params.setFilterConditions(query.getFilterConditions());
         params.setParameters(query.getParameters());
         if (query.getInputMapping() != null) {
             params.setInputMapping(query.getInputMapping());
@@ -541,9 +561,11 @@ public class FederatedExecutor {
         params.setOperator(batch.getOperator());
         params.setInputIds(batch.getInputIds());
         params.setInputIdField(batch.getInputIdField());
+        params.setOutputIdField(batch.getOutputIdField());
         params.setOutputFields(batch.getOutputFields());
         params.setOutputVariables(batch.getOutputVariables());
         params.setFilters(batch.getFilters());
+        params.setFilterConditions(batch.getFilterConditions());
 
         return runOnExecutor(() -> {
             List<Map<String, Object>> data = adapter.executeExternalQuery(params);

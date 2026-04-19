@@ -92,7 +92,6 @@ public class QueryRewriter {
                 Pattern pattern = match.getPattern();
                 if (pattern != null) {
                     VirtualEdgeDetector.DetectionResult detection = detector.detect(pattern);
-                    System.out.println("DEBUG: Detection result for preceding match clause: hasVirtual=" + detection.hasVirtualElements());
                     if (detection.hasVirtualElements()) {
                         return true;
                     }
@@ -188,7 +187,7 @@ public class QueryRewriter {
 
     private void applyWithClause(WithClause withClause, ExecutionPlan plan) {
         if (withClause.getWhereClause() != null) {
-            extractWhereConditions(withClause.getWhereClause(), plan);
+            addPostFilterExpression(plan, withClause.getWhereClause().getExpression());
         }
 
         if (withClause.getOrderByClause() != null) {
@@ -257,15 +256,13 @@ public class QueryRewriter {
     }
 
     private void applyPendingFilters(ExecutionPlan plan, WhereConditionPushdown.PushdownResult pushdownResult) {
-        for (WhereConditionPushdown.Condition pc : pushdownResult.getPhysicalConditions()) {
-            GlobalContext.WhereCondition condition = convertToWhereCondition(pc);
-            condition.setVirtual(false);
-            plan.getGlobalContext().addPendingFilter(condition);
+        for (WhereConditionPushdown.Condition physical : pushdownResult.getPhysicalConditions()) {
+            GlobalContext.WhereCondition validationCondition = convertToWhereCondition(physical);
+            validationCondition.setVirtual(false);
+            plan.getGlobalContext().addValidationFilter(validationCondition);
         }
-        for (WhereConditionPushdown.Condition vc : pushdownResult.getVirtualConditions()) {
-            GlobalContext.WhereCondition condition = convertToWhereCondition(vc);
-            condition.setVirtual(true);
-            plan.getGlobalContext().addPendingFilter(condition);
+        for (WhereConditionPushdown.Condition postFilter : pushdownResult.getPostFilterConditions()) {
+            plan.getGlobalContext().addPendingFilter(convertToWhereCondition(postFilter));
         }
     }
 
@@ -328,37 +325,12 @@ public class QueryRewriter {
         return orderSpec;
     }
 
-    private void extractWhereConditions(WhereClause where, ExecutionPlan plan) {
-        extractConditions(where.getExpression(), plan);
-    }
-
-    private void extractConditions(Expression expr, ExecutionPlan plan) {
-        if (expr instanceof LogicalExpression) {
-            LogicalExpression logic = (LogicalExpression) expr;
-            for (Expression operand : logic.getOperands()) {
-                extractConditions(operand, plan);
-            }
-        } else if (expr instanceof Comparison) {
-            Comparison comp = (Comparison) expr;
-            GlobalContext.WhereCondition condition = new GlobalContext.WhereCondition();
-            condition.setOperator(comp.getOperator());
-            condition.setOriginalExpression(expr);
-
-            if (comp.getLeft() instanceof PropertyAccess) {
-                PropertyAccess pa = (PropertyAccess) comp.getLeft();
-                if (pa.getTarget() instanceof Variable) {
-                    condition.setVariable(((Variable) pa.getTarget()).getName());
-                }
-                condition.setProperty(pa.getPropertyName());
-            }
-
-            if (comp.getRight() instanceof Literal) {
-                condition.setValue(((Literal) comp.getRight()).getValue());
-            }
-
-            if (condition.getVariable() != null) {
-                plan.getGlobalContext().addPendingFilter(condition);
-            }
+    private void addPostFilterExpression(ExecutionPlan plan, Expression expression) {
+        if (expression == null) {
+            return;
         }
+        GlobalContext.WhereCondition condition = new GlobalContext.WhereCondition();
+        condition.setOriginalExpression(expression);
+        plan.getGlobalContext().addPendingFilter(condition);
     }
 }

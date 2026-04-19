@@ -24,10 +24,13 @@ import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.concurrent.CompletionException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class GraphQuerySDK {
     private static final Logger log = LoggerFactory.getLogger(GraphQuerySDK.class);
+    private static final Pattern PARAMETER_PATTERN = Pattern.compile("\\$(\\p{Alpha}[\\p{Alnum}_]*|\\d+)");
 
     @Autowired
     private CypherParserFacade parser;
@@ -152,7 +155,8 @@ public class GraphQuerySDK {
         ExecutionResult execResult = executor.execute(plan).join();
 
         List<Map<String, Object>> results = resultConverter.buildResults(ast, execResult);
-        results = pendingFilterApplier.apply(results, plan.getGlobalContext().getPendingFilters());
+        results = pendingFilterApplier.apply(results, plan.getGlobalContext().getValidationFilters(), params);
+        results = pendingFilterApplier.apply(results, plan.getGlobalContext().getPendingFilters(), params);
         results = globalSorter.applySortAndPagination(results, plan.getGlobalContext());
         results = applyDeduplication(results, ast);
         return results;
@@ -166,9 +170,9 @@ public class GraphQuerySDK {
         
         String cypher = ast.toCypher();
         List<org.neo4j.driver.Record> records;
-        
-        if (params != null && !params.isEmpty()) {
-            records = tugraphConnector.executeQuery(cypher, params.values().toArray());
+
+        if (hasDirectExecutionParameters(ast)) {
+            records = tugraphConnector.executeQuery(cypher, buildDirectExecutionArguments(ast, params));
         } else {
             records = tugraphConnector.executeQuery(cypher);
         }
@@ -191,6 +195,47 @@ public class GraphQuerySDK {
             results.add(row);
         }
         return results;
+    }
+
+    private Object[] buildDirectExecutionArguments(Program ast, Map<String, Object> params) {
+        List<Object> orderedValues = new ArrayList<>();
+        Matcher matcher = PARAMETER_PATTERN.matcher(ast.toCypher());
+        while (matcher.find()) {
+            String token = matcher.group(1);
+            orderedValues.add(resolveDirectExecutionParameter(token, params));
+        }
+        return orderedValues.toArray();
+    }
+
+    private boolean hasDirectExecutionParameters(Program ast) {
+        return PARAMETER_PATTERN.matcher(ast.toCypher()).find();
+    }
+
+    private Object resolveDirectExecutionParameter(String token, Map<String, Object> params) {
+        if (params == null) {
+            throw new GraphQueryException(ErrorCode.QUERY_EXECUTION_ERROR,
+                    "Missing parameter for direct execution: " + token);
+        }
+        if (params.containsKey(token)) {
+            return params.get(token);
+        }
+        if (isNumericToken(token)) {
+            Integer numericKey = Integer.valueOf(token);
+            if (params.containsKey(numericKey)) {
+                return params.get(numericKey);
+            }
+        }
+        throw new GraphQueryException(ErrorCode.QUERY_EXECUTION_ERROR,
+                "Missing parameter for direct execution: " + token);
+    }
+
+    private boolean isNumericToken(String token) {
+        for (int i = 0; i < token.length(); i++) {
+            if (!Character.isDigit(token.charAt(i))) {
+                return false;
+            }
+        }
+        return !token.isEmpty();
     }
 
     private Object convertNeo4jValue(org.neo4j.driver.Value value) {

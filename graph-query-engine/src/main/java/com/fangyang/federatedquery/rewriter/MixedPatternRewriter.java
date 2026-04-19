@@ -152,7 +152,14 @@ public class MixedPatternRewriter {
 
         for (WhereConditionPushdown.Condition c : conditions) {
             String key = c.getProperty() != null ? c.getProperty() : c.getVariable();
-            query.addFilter(key, c.getValue());
+            if (isEqualityOperator(c.getOperator())) {
+                query.addFilter(key, c.getValue());
+            }
+            query.addFilterCondition(key, c.getOperator(), c.getValue());
         }
+    }
+
+    private boolean isEqualityOperator(String operator) {
+        return "=".equals(operator) || "==".equals(operator);
     }
 }

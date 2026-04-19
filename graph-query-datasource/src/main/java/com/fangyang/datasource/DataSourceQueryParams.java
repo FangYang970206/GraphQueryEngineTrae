@@ -16,5 +16,6 @@ public class DataSourceQueryParams {
     private List<String> outputVariables = new ArrayList<>();
     private List<String> outputFields = new ArrayList<>();
     private Map<String, Object> filters = new HashMap<>();
+    private List<QueryFilter> filterConditions = new ArrayList<>();
     private Map<String, Object> parameters = new HashMap<>();
 }
