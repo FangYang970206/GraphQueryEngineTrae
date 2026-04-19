@@ -1,6 +1,6 @@
 package com.fangyang.federatedquery.e2e;
 
-import com.fangyang.federatedquery.GraphEntity;
+import com.fangyang.federatedquery.model.GraphEntity;
 
 final class E2EGraphEntityFactory {
     private E2EGraphEntityFactory() {

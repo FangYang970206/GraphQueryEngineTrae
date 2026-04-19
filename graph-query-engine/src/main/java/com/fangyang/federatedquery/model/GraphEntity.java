@@ -1,4 +1,4 @@
-package com.fangyang.federatedquery;
+package com.fangyang.federatedquery.model;
 
 import lombok.Data;
 import lombok.experimental.Accessors;

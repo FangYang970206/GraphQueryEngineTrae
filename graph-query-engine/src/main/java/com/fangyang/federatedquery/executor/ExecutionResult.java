@@ -1,6 +1,6 @@
 package com.fangyang.federatedquery.executor;
 
-import com.fangyang.federatedquery.QueryResult;
+import com.fangyang.federatedquery.model.QueryResult;
 import lombok.Data;
 
 import java.util.*;

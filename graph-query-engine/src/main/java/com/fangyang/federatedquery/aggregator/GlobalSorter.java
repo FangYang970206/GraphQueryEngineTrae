@@ -1,6 +1,6 @@
 package com.fangyang.federatedquery.aggregator;
 
-import com.fangyang.federatedquery.GraphEntity;
+import com.fangyang.federatedquery.model.GraphEntity;
 import com.fangyang.federatedquery.ast.ProjectBy;
 import com.fangyang.federatedquery.plan.GlobalContext;
 import org.springframework.stereotype.Component;

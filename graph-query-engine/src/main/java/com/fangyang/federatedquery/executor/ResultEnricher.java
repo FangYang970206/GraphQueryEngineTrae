@@ -1,9 +1,8 @@
 package com.fangyang.federatedquery.executor;
 
-import com.fangyang.federatedquery.GraphEntity;
-import com.fangyang.federatedquery.executor.ExecutionResult;
+import com.fangyang.federatedquery.model.GraphEntity;
 import com.fangyang.federatedquery.plan.ExternalQuery;
-import com.fangyang.federatedquery.QueryResult;
+import com.fangyang.federatedquery.model.QueryResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;

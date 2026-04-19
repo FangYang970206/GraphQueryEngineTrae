@@ -1,12 +1,11 @@
 package com.fangyang.federatedquery.aggregator;
 
-import com.fangyang.federatedquery.GraphEntity;
-import com.fangyang.federatedquery.QueryResult;
+import com.fangyang.federatedquery.model.GraphEntity;
+import com.fangyang.federatedquery.model.QueryResult;
 import com.fangyang.federatedquery.executor.ExecutionResult;
 import com.fangyang.metadata.MetadataQueryService;
 import com.fangyang.metadata.VirtualEdgeBinding;
 import com.fangyang.federatedquery.ast.*;
-import com.fangyang.federatedquery.ast.UnionClause;
 
 import java.util.*;
 import java.util.function.Consumer;

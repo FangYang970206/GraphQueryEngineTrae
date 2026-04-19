@@ -1,6 +1,6 @@
 package com.fangyang.federatedquery.util;
 
-import com.fangyang.federatedquery.GraphEntity;
+import com.fangyang.federatedquery.model.GraphEntity;
 
 import java.util.*;
 import java.util.stream.Collectors;

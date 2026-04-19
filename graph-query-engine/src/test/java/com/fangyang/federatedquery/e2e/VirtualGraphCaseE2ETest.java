@@ -2,8 +2,7 @@ package com.fangyang.federatedquery.e2e;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fangyang.federatedquery.adapter.MockExternalAdapter;
-import com.fangyang.federatedquery.GraphEntity;
-import com.fangyang.federatedquery.QueryResult;
+import com.fangyang.federatedquery.model.GraphEntity;
 import com.fangyang.federatedquery.aggregator.*;
 import com.fangyang.datasource.*;
 import com.fangyang.datasource.DataSourceFactory;

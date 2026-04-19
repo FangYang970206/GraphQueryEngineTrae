@@ -2,8 +2,8 @@ package com.fangyang.federatedquery.adapter;
 
 import com.fangyang.datasource.DataSourceAdapter;
 import com.fangyang.datasource.DataSourceQueryParams;
-import com.fangyang.federatedquery.GraphEntity;
-import com.fangyang.federatedquery.QueryResult;
+import com.fangyang.federatedquery.model.GraphEntity;
+import com.fangyang.federatedquery.model.QueryResult;
 import com.fangyang.federatedquery.exception.ErrorCode;
 import com.fangyang.federatedquery.exception.GraphQueryException;
 import com.fangyang.federatedquery.plan.ExternalQuery;

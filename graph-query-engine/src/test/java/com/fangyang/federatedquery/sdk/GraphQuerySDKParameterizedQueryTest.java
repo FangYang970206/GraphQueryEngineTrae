@@ -1,8 +1,5 @@
 package com.fangyang.federatedquery.sdk;
 
-import com.fangyang.federatedquery.GraphEntity;
-import com.fangyang.federatedquery.QueryResult;
-import com.fangyang.datasource.TuGraphConfig;
 import com.fangyang.datasource.TuGraphConnector;
 
 import com.fangyang.federatedquery.executor.FederatedExecutor;
