@@ -8,10 +8,10 @@ Guidelines for JSON handling in this Java SDK project.
 
 ## Rule
 
-Shared JSON handling **must** go through `com.federatedquery.util.JsonUtil`.
+Shared JSON handling **must** go through `com.fangyang.common.JsonUtil` (from `graph-query-common` module).
 
 ```java
-import com.federatedquery.util.JsonUtil;
+import com.fangyang.common.JsonUtil;
 
 // Serialize
 String json = JsonUtil.toJson(object);
@@ -38,9 +38,22 @@ If code needs JSON serialization/deserialization, call `JsonUtil` exposed APIs i
 
 ## JsonUtil APIs
 
-Check `JsonUtil` class for available methods:
+Check `JsonUtil` class in `graph-query-common` module for available methods:
 - `toJson(Object)` - Serialize to JSON string
 - `fromJson(String, Class)` - Deserialize from JSON string
 - `readTree(String)` - Parse JSON to JsonNode
 - `valueToTree(Object)` - Convert object to JsonNode
 - etc.
+
+---
+
+## Module Dependency
+
+To use `JsonUtil` in other modules, add dependency in `pom.xml`:
+
+```xml
+<dependency>
+    <groupId>com.fangyang</groupId>
+    <artifactId>graph-query-common</artifactId>
+</dependency>
+```

@@ -15,7 +15,7 @@ Guidelines for using Spring Framework 6.1.6 in this project.
 
 ## Component Scanning
 
-`GraphQueryEngineConfiguration` does `@ComponentScan("com.federatedquery")`.
+`GraphQueryEngineConfiguration` does `@ComponentScan("com.fangyang")`.
 
 ---
 
@@ -59,7 +59,26 @@ Tests wire components **manually** — no Spring test context needed.
 ```java
 // Manual wiring pattern
 CypherParserFacade parser = new CypherParserFacade();
-QueryRewriter rewriter = new QueryRewriter(registry, detector);
-FederatedExecutor executor = new FederatedExecutor(registry);
-GraphQuerySDK sdk = new GraphQuerySDK(parser, rewriter, executor, ...);
+QueryRewriter rewriter = new QueryRewriter(metadataQueryService, detector);
+FederatedExecutor executor = new FederatedExecutor(metadataQueryService);
+GraphQuerySDK sdk = new GraphQuerySDK(parser, rewriter, executor, deduplicator);
+```
+
+---
+
+## Module Cross-References
+
+When components from different modules need to be injected, ensure:
+1. The dependency is declared in the module's `pom.xml`
+2. The component is annotated with `@Component` or `@Service`
+3. The package is included in the component scan path
+
+Example cross-module injection:
+```java
+// In graph-query-engine module
+@Component
+public class QueryRewriter {
+    @Autowired
+    private MetadataQueryService metadataQueryService;  // from graph-query-metadata
+}
 ```

@@ -8,7 +8,7 @@ Guidelines for writing and validating unit tests in this Java SDK project.
 
 ## Test Setup Pattern
 
-1. Create `MetadataRegistryImpl`
+1. Create `MetadataRegistryImpl` (from `graph-query-metadata` module)
 2. Register data sources + virtual edges + labels
 3. Register mock adapters on `FederatedExecutor` (for unit tests)
 4. Or use `TuGraphConnector` for real database integration tests
@@ -22,7 +22,7 @@ Guidelines for writing and validating unit tests in this Java SDK project.
 - **TuGraph** (physical graph database) - mocked via `MockExternalAdapter`
 - **External services** (REST API, gRPC, custom adapters) - mocked via `MockExternalAdapter`
 
-The `MockExternalAdapter` (`src/test/java/.../adapter/MockExternalAdapter.java`) simulates all data source behaviors:
+The `MockExternalAdapter` (`graph-query-engine/src/test/java/.../adapter/MockExternalAdapter.java`) simulates all data source behaviors:
 - Supports configurable responses per operator
 - Simulates delays and errors for reliability testing
 - No real database or external service connections required
@@ -32,10 +32,10 @@ The `MockExternalAdapter` (`src/test/java/.../adapter/MockExternalAdapter.java`)
 ## Real Database Integration Tests
 
 **Integration tests support real TuGraph database connections**:
-- **TuGraphConnector** (`src/main/java/.../connector/TuGraphConnectorImpl.java`) provides Bolt protocol connection
+- **TuGraphConnector** (`graph-query-datasource/src/main/java/.../TuGraphConnectorImpl.java`) provides Bolt protocol connection
 - **Default configuration**: `bolt://127.0.0.1:7687`, username: `admin`, password: `73@TuGraph`
 - Tests are automatically skipped if TuGraph is not available
-- Located in `src/test/java/.../connector/TuGraphConnectorTest.java` and `src/test/java/.../e2e/TuGraphRealDatabaseE2ETest.java`
+- Located in `graph-query-engine/src/test/java/.../connector/TuGraphConnectorTest.java` and `graph-query-engine/src/test/java/.../e2e/TuGraphRealDatabaseE2ETest.java`
 
 ---
 
@@ -118,5 +118,5 @@ assertTrue(executionResult.isSuccess());
 ## Test Command
 
 ```bash
-mvn test       # 52 tests across 5 classes (ParserTest, RewriterTest, ExecutorTest, AggregatorTest, E2ETest)
+mvn test       # Run all tests across modules
 ```
