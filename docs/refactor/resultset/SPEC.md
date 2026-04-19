@@ -83,8 +83,9 @@
 - 移除 `success` 字段。
 - 保留结果收集职责，不再承担“成功/失败状态”表达。
 
-#### `QueryResult`
+#### `QueryResult` (model 包)
 
+- 位于 `model` 目录，作为查询结果的核心领域模型。
 - 逐步移除 `success`、`error`、`warnings` 作为失败语义载体。
 - 成功场景仍承载 `entities`、`rows`、`dataSource`、`executionTimeMs`。
 - 失败场景改为异常，不再构造 `QueryResult.error()` / `QueryResult.partial()`。

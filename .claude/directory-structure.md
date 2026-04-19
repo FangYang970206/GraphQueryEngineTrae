@@ -111,10 +111,11 @@ graph-query-engine/
 │   │   └── VirtualEdgeDetector.java
 │   ├── sdk/                     # Public API
 │   │   └── GraphQuerySDK.java
+│   ├── model/                   # Domain models
+│   │   ├── GraphEntity.java     # Graph node/edge entity
+│   │   └── QueryResult.java     # Query execution result
 │   ├── util/                    # Utilities
 │   │   └── RecordConverter.java
-│   ├── GraphEntity.java
-│   └── QueryResult.java
 │
 └── src/test/java/com/fangyang/federatedquery/
     ├── aggregator/              # Aggregator tests

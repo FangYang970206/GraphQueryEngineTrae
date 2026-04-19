@@ -214,12 +214,13 @@ return future.exceptionally(e -> QueryResult.error(e.getMessage()));
 ### 6.2 QueryResult
 
 **约束编号**: RESULT-002  
-**描述**: `QueryResult` 不再承载失败和 warning 语义  
+**描述**: `QueryResult` (位于 model 包) 不再承载失败和 warning 语义  
 **级别**: 强制  
 **验证方式**: 代码审查
 
 **详细说明**:
 
+- `QueryResult` 是 model 目录下的核心领域模型，用于承载查询成功后的数据。
 - 不再依赖 `success`、`error`、`warnings` 作为执行失败模型。
 - `warning` 语义彻底移除。
 - `5001 PARTIAL_RESULT_ERROR` 不再使用。

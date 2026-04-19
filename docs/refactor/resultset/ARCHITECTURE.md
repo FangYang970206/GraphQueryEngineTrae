@@ -131,11 +131,12 @@ DataSourceAdapter.execute()
 - 不再通过 `success` 表达执行状态。
 - 失败由异常表示，而不是由对象状态表示。
 
-### QueryResult
+### QueryResult (model 包)
 
 **保留职责**
 
 - 承载成功查询返回的 `entities`、`rows`、`dataSource`、`executionTimeMs`。
+- 位于 `model` 目录，作为核心领域模型。
 
 **移除方向**
 

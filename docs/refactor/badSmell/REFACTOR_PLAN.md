@@ -189,8 +189,8 @@
 - `VirtualEdgeDetector` 内部类
 - `ExecutionPlan`
 - `ExternalQuery`
-- `GraphEntity`
-- `QueryResult`
+- `model/GraphEntity` - 图实体领域模型
+- `model/QueryResult` - 查询结果领域模型
 - `ExecutionResult`
 - `LabelMetadata`
 

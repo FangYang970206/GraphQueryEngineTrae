@@ -11,7 +11,7 @@ Java 17 Maven multi-module SDK. Federated Cypher query engine: parses Cypher via
 | `graph-query-common` | `com.fangyang.common` | Shared utilities (JsonUtil) |
 | `graph-query-metadata` | `com.fangyang.metadata` | Metadata registry, label/edge definitions |
 | `graph-query-datasource` | `com.fangyang.datasource` | Data source adapters, TuGraph connector |
-| `graph-query-engine` | `com.fangyang.federatedquery` | Core engine (parser, rewriter, executor) |
+| `graph-query-engine` | `com.fangyang.federatedquery` | Core engine (parser, rewriter, executor, model) |
 
 ## Commands
 

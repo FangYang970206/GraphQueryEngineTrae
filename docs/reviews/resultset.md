@@ -199,7 +199,7 @@ private void checkExecutionErrors(ExecutionResult execResult) {
 
 ---
 
-## 四、ExecutionResult 和 QueryResult 问题
+## 四、ExecutionResult 和 QueryResult (model 包) 问题
 
 ### 7. ExecutionResult.success 字段的移除影响 ⚠️ 低风险
 
@@ -219,7 +219,7 @@ private boolean success = false;
 
 ---
 
-### 8. QueryResult.warnings 字段的处理 ⚠️ 中风险
+### 8. QueryResult (model 包) warnings 字段的处理 ⚠️ 中风险
 
 **当前代码**：
 ```java

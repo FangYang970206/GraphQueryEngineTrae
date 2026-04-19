@@ -301,8 +301,8 @@ graph-query-datasource/
 
 | 类名 | 说明 |
 |------|------|
-| GraphEntity | 图实体（点、边） |
-| QueryResult | 查询结果 |
+| model/GraphEntity | 图实体（点、边）领域模型 |
+| model/QueryResult | 查询结果领域模型 |
 | RecordConverter | Record转换器 |
 
 #### 包结构
@@ -328,11 +328,12 @@ graph-query-engine/
     │   │               ├── rewriter/
     │   │               ├── executor/
     │   │               ├── aggregator/
-    │   │               ├── sdk/
-    │   │               ├── exception/
-    │   │               ├── util/
-    │   │               ├── GraphEntity.java
-    │   │               └── QueryResult.java
+    │   │   │               ├── sdk/
+│   │   │               ├── exception/
+│   │   │               ├── model/           # 领域模型包
+│   │   │               │   ├── GraphEntity.java
+│   │   │               │   └── QueryResult.java
+│   │   │               ├── util/
     │   └── resources/
     │       ├── spring/
     │       │   └── applicationContext.xml
@@ -893,8 +894,8 @@ graph-query-engine/
 | com.federatedquery.connector.* | com.fangyang.datasource.* |
 | com.federatedquery.adapter.DataSourceAdapter | com.fangyang.datasource.DataSourceAdapter |
 | com.federatedquery.adapter.TuGraphAdapterImpl | com.fangyang.datasource.TuGraphAdapterImpl |
-| com.federatedquery.adapter.GraphEntity | com.fangyang.federatedquery.GraphEntity |
-| com.federatedquery.adapter.QueryResult | com.fangyang.federatedquery.QueryResult |
+| com.federatedquery.adapter.GraphEntity | com.fangyang.federatedquery.model.GraphEntity (位于 model 包，图实体领域模型) |
+| com.federatedquery.adapter.QueryResult | com.fangyang.federatedquery.model.QueryResult (位于 model 包，查询结果领域模型) |
 | com.federatedquery.grammar.* | com.fangyang.federatedquery.grammar.* |
 | com.federatedquery.* (其他) | com.fangyang.federatedquery.* |
 

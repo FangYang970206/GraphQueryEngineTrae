@@ -104,12 +104,13 @@
 - [ ] 调整 `markExecutionSuccess()` 或移除该方法
 - [ ] 清理所有对 `ExecutionResult.success` 的引用
 
-#### 2.3.2 `QueryResult`
+#### 2.3.2 `QueryResult` (model 包)
 
 - [ ] 评估并移除 `success`、`error`、`warnings` 的主路径依赖
 - [ ] 删除或废弃 `QueryResult.error()`
 - [ ] 删除或废弃 `QueryResult.partial()`
 - [ ] 清理 `PARTIAL_RESULT_ERROR(5001)` 的使用
+- [ ] 确认 model 目录结构正确性
 
 #### 2.3.3 相关组件
 

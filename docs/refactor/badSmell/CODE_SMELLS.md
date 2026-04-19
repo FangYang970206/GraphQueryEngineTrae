@@ -178,16 +178,16 @@
 
 ---
 
-### 1.8 数据对象类
+### 1.8 数据对象类 (model 包)
 
 **涉及文件**
 
-- `src/main/java/com/federatedquery/adapter/GraphEntity.java`
-- `src/main/java/com/federatedquery/adapter/QueryResult.java`
-- `src/main/java/com/federatedquery/executor/ExecutionResult.java`
-- `src/main/java/com/federatedquery/plan/ExecutionPlan.java`
-- `src/main/java/com/federatedquery/plan/ExternalQuery.java`
-- `src/main/java/com/federatedquery/metadata/LabelMetadata.java`
+- `model/GraphEntity.java` - 图实体领域模型
+- `model/QueryResult.java` - 查询结果领域模型
+- `executor/ExecutionResult.java` - 执行结果
+- `plan/ExecutionPlan.java` - 执行计划
+- `plan/ExternalQuery.java` - 外部查询
+- `metadata/LabelMetadata.java` - 标签元数据
 
 **已确认坏味道**
 
@@ -197,8 +197,9 @@
 
 **备注**
 
-- 这些类并不一定都要“充血化”。
+- 这些类并不一定都要"充血化"。
 - 更现实的目标是先收紧边界：减少裸 `Map/Object`、减少到处直接 `put/add/set`。
+- `GraphEntity` 和 `QueryResult` 已移至 `model` 目录，作为核心领域模型。
 
 ---
 
@@ -299,7 +300,7 @@
 - `GraphQueryMetaFactory.java`
 - `ExecutionPlan.java`
 - `ExternalQuery.java`
-- `GraphEntity.java`
-- `QueryResult.java`
+- `model/GraphEntity.java` - 图实体领域模型
+- `model/QueryResult.java` - 查询结果领域模型
 - `ExecutionResult.java`
 - `LabelMetadata.java`
