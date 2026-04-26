@@ -330,6 +330,31 @@ class ExecutorTest {
     }
 
     @Test
+    @DisplayName("Union result assembler merges physical batch and external entities")
+    void unionResultAssemblerMergesAllResultTypes() {
+        QueryResultAssembler assembler = new QueryResultAssembler(() -> metadataQueryService, ResultEnricher::new);
+
+        ExecutionResult first = new ExecutionResult();
+        QueryResult physicalResult = new QueryResult();
+        physicalResult.addEntity(GraphEntity.node("p1", "Physical"));
+        first.addPhysicalResult("physical-q1", physicalResult);
+
+        QueryResult externalResult = new QueryResult();
+        externalResult.addEntity(GraphEntity.node("e1", "External"));
+        first.addExternalResult(externalResult);
+
+        ExecutionResult second = new ExecutionResult();
+        QueryResult batchResult = new QueryResult();
+        batchResult.addEntity(GraphEntity.node("b1", "Batch"));
+        second.addBatchResult("batch-q1", batchResult);
+
+        QueryResult unionResult = assembler.buildUnionResultFromResults(List.of(first, second));
+
+        assertEquals(3, unionResult.getEntities().size(), "UNION 应聚合所有结果类型中的实体");
+        assertEquals(2, ((List<?>) unionResult.getData()).size(), "UNION 结果应保留子计划执行结果");
+    }
+
+    @Test
     @DisplayName("Physical query failure is not mislabeled as timeout")
     void physicalFailureDoesNotBecomeTimeout() {
         DataSourceAdapter failingTuGraphAdapter = new DataSourceAdapter() {
