@@ -12,26 +12,17 @@ import com.fangyang.federatedquery.ast.Statement;
 import com.fangyang.federatedquery.ast.UnionClause;
 import com.fangyang.federatedquery.ast.Variable;
 import com.fangyang.federatedquery.exception.SyntaxErrorException;
+import com.fangyang.federatedquery.validation.ScopeValidator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Spy;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@ExtendWith(MockitoExtension.class)
 class GrammarQueryParserCoverageTest {
-    @Spy
-    private CypherASTVisitor astVisitor = new CypherASTVisitor();
-    @InjectMocks
-    private CypherParserFacade parser;
+    private final CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor(), new ScopeValidator());
 
     @Test
     @DisplayName("USING SNAPSHOT + PROJECT BY: exact AST fields")
@@ -57,15 +48,14 @@ class GrammarQueryParserCoverageTest {
     }
 
     @Test
-    @DisplayName("MATCH optional + relationship details: exact pattern structure")
-    void matchOptionalPatternAst() {
-        String cypher = "OPTIONAL MATCH (n:NetworkElement)-[r:HAS_LTP|HAS_PORT]->(l:LTP) WHERE n.name = 'NE001' RETURN n,l";
+    @DisplayName("MATCH + relationship details: exact pattern structure")
+    void matchPatternAst() {
+        String cypher = "MATCH (n:NetworkElement)-[r:HAS_LTP|HAS_PORT]->(l:LTP) WHERE n.name = 'NE001' RETURN n,l";
         Program program = parser.parse(cypher);
         MatchClause match = program.getStatement().getQuery().getSingleQueries().get(0).getMatchClauses().get(0);
         Pattern.PatternElement element = match.getPattern().getPatternParts().get(0).getPatternElement();
         Pattern.PatternElementChain chain = element.getChains().get(0);
 
-        assertTrue(match.isOptional(), "MATCH must be optional");
         assertEquals("n", element.getNodePattern().getVariable(), "Start node variable must match");
         assertEquals("NetworkElement", element.getNodePattern().getLabels().get(0), "Start node label must match");
         assertEquals("r", chain.getRelationshipPattern().getVariable(), "Relationship variable must match");
@@ -78,19 +68,17 @@ class GrammarQueryParserCoverageTest {
     }
 
     @Test
-    @DisplayName("WITH + ORDER BY + SKIP + LIMIT: exact AST semantics")
-    void withOrderSkipLimitAst() {
-        String cypher = "MATCH (n:NetworkElement) WITH n ORDER BY n.name DESC SKIP 2 LIMIT 3 RETURN n";
+    @DisplayName("WITH + ORDER BY + LIMIT: exact AST semantics")
+    void withOrderLimitAst() {
+        String cypher = "MATCH (n:NetworkElement) WITH n ORDER BY n.name DESC LIMIT 3 RETURN n";
         Program program = parser.parse(cypher);
         Statement.SingleQuery sq = program.getStatement().getQuery().getSingleQueries().get(0);
-        assertTrue(sq.hasMultiPartQuery(), "Query must be multi-part");
         assertEquals(1, sq.getPrecedingWithClauses().size(), "WITH clause count must match");
 
         ReturnClause.ReturnItem withItem = sq.getPrecedingWithClauses().get(0).getReturnItems().get(0);
         Expression withExpr = withItem.getExpression();
-        assertTrue(withExpr instanceof Variable, "WITH return expression must be variable");
+        assertEquals(Variable.class, withExpr.getClass(), "WITH return expression must be variable");
         assertEquals("n", ((Variable) withExpr).getName(), "WITH variable must match");
-        assertEquals(2, sq.getPrecedingWithClauses().get(0).getSkipClause().getSkipValue(), "WITH SKIP must match");
         assertEquals(3, sq.getPrecedingWithClauses().get(0).getLimitClause().getLimitValue(), "WITH LIMIT must match");
         OrderByClause.SortItem sort = sq.getPrecedingWithClauses().get(0).getOrderByClause().getSortItems().get(0);
         assertEquals(OrderByClause.SortDirection.DESC, sort.getDirection(), "WITH ORDER direction must match");
@@ -99,7 +87,7 @@ class GrammarQueryParserCoverageTest {
     @Test
     @DisplayName("UNION / UNION ALL: exact union flags")
     void unionFlagsAst() {
-        String cypher = "MATCH (n) RETURN n UNION ALL MATCH (m) RETURN m UNION MATCH (k) RETURN k";
+        String cypher = "MATCH (n:NetworkElement) RETURN n UNION ALL MATCH (m:NetworkElement) RETURN m UNION MATCH (k:NetworkElement) RETURN k";
         Program program = parser.parse(cypher);
         Statement.Query query = program.getStatement().getQuery();
         UnionClause first = query.getUnions().get(0);
@@ -107,44 +95,26 @@ class GrammarQueryParserCoverageTest {
 
         assertEquals(3, query.getSingleQueries().size(), "Single query count must match");
         assertEquals(2, query.getUnions().size(), "Union clause count must match");
-        assertTrue(first.isAll(), "First union must be UNION ALL");
+        assertEquals(true, first.isAll(), "First union must be UNION ALL");
         assertFalse(second.isAll(), "Second union must be UNION DISTINCT");
     }
 
     @Test
-    @DisplayName("UNWIND: exact expression and variable binding")
-    void unwindAst() {
-        String cypher = "UNWIND [1,2,3] AS x RETURN x";
-        Program program = parser.parse(cypher);
-        Statement.SingleQuery sq = program.getStatement().getQuery().getSingleQueries().get(0);
-        assertEquals(1, sq.getUnwindClauses().size(), "UNWIND clause count must match");
-        assertEquals("x", sq.getUnwindClauses().get(0).getVariable(), "UNWIND variable must match");
-        assertNotNull(sq.getUnwindClauses().get(0).getExpression(), "UNWIND expression must exist");
-        assertEquals(1, sq.getReturnClause().getReturnItems().size(), "Return item count must match");
+    @DisplayName("Unsupported clauses are rejected")
+    void unsupportedClausesFailFast() {
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("OPTIONAL MATCH (n:NetworkElement) RETURN n"));
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("UNWIND [1,2,3] AS x RETURN x"));
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("CALL db.labels()"));
     }
 
     @Test
-    @DisplayName("Updating clauses: parser structure contract")
+    @DisplayName("Write clauses are rejected")
     void updatingClauseParserContract() {
-        Program createProgram = parser.parse("CREATE (n:NetworkElement {name:'NE001'})");
-        Program mergeProgram = parser.parse("MERGE (n:NetworkElement {name:'NE002'})");
-        Program deleteProgram = parser.parse("MATCH (n:NetworkElement) DELETE n");
-        Program setProgram = parser.parse("MATCH (n:NetworkElement) SET n.name = 'NE003'");
-        Program removeProgram = parser.parse("MATCH (n:NetworkElement) REMOVE n.name");
-
-        Statement.SingleQuery createSq = createProgram.getStatement().getQuery().getSingleQueries().get(0);
-        Statement.SingleQuery mergeSq = mergeProgram.getStatement().getQuery().getSingleQueries().get(0);
-        Statement.SingleQuery deleteSq = deleteProgram.getStatement().getQuery().getSingleQueries().get(0);
-        Statement.SingleQuery setSq = setProgram.getStatement().getQuery().getSingleQueries().get(0);
-        Statement.SingleQuery removeSq = removeProgram.getStatement().getQuery().getSingleQueries().get(0);
-
-        assertEquals(0, createSq.getMatchClauses().size(), "CREATE query should not have MATCH clauses");
-        assertEquals(0, mergeSq.getMatchClauses().size(), "MERGE query should not have MATCH clauses");
-        assertEquals(1, deleteSq.getMatchClauses().size(), "DELETE query should keep preceding MATCH clause");
-        assertEquals(1, setSq.getMatchClauses().size(), "SET query should keep preceding MATCH clause");
-        assertEquals(1, removeSq.getMatchClauses().size(), "REMOVE query should keep preceding MATCH clause");
-        assertNull(createSq.getReturnClause(), "CREATE query should not have RETURN clause");
-        assertNull(mergeSq.getReturnClause(), "MERGE query should not have RETURN clause");
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("CREATE (n:NetworkElement {name:'NE001'})"));
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("MERGE (n:NetworkElement {name:'NE002'})"));
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("MATCH (n:NetworkElement) DELETE n"));
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("MATCH (n:NetworkElement) SET n.name = 'NE003'"));
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("MATCH (n:NetworkElement) REMOVE n.name"));
     }
 
     @Test
@@ -162,5 +132,13 @@ class GrammarQueryParserCoverageTest {
         assertEquals("p", part.getVariable(), "Pattern part variable must match");
         assertEquals("n", start.getVariable(), "Start node variable must match");
         assertEquals(1, part.getPatternElement().getChains().size(), "Chain count must match");
+    }
+
+    @Test
+    @DisplayName("Scope restrictions fail in parser validation")
+    void scopeRestrictionsFailFast() {
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("MATCH (n:NetworkElement) RETURN n SKIP 1"));
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("MATCH (n)-[:HAS_LTP]->(l:LTP) RETURN n, l"));
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("MATCH (n:NetworkElement)-[:HAS_LTP*1..2]->(l:LTP) RETURN n, l"));
     }
 }

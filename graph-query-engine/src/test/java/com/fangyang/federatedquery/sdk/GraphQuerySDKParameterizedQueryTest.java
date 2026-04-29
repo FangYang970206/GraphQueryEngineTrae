@@ -132,7 +132,7 @@ class GraphQuerySDKParameterizedQueryTest {
     @Test
     @DisplayName("测试参数化查询 - Map参数")
     void testParameterizedQueryWithMapParameter() {
-        String cypher = "CREATE (n:Person) SET n = $props RETURN n";
+        String cypher = "MATCH (n:Person) WHERE n.metadata = $props RETURN n";
         Map<String, Object> props = new LinkedHashMap<>();
         props.put("name", "赵六");
         props.put("age", 28);
@@ -221,11 +221,57 @@ class GraphQuerySDKParameterizedQueryTest {
         verify(mockConnector, never()).executeQuery(eq(cypher), any(Object[].class));
     }
 
+    @Test
+    @DisplayName("direct execution 对纯物理查询应用默认 5000 limit")
+    void executeAppliesImplicitPhysicalLimit() {
+        String cypher = "MATCH (n:Person) RETURN n";
+        ExecutionPlan plan = createDirectExecutionPlan();
+        plan.getGlobalContext().setHasImplicitLimit(true);
+        plan.getGlobalContext().setImplicitLimit(5000);
+        List<Record> mockRecords = createManyMockRecords("n", "Person", 6000);
+
+        when(rewriter.rewrite(any())).thenReturn(plan);
+        when(mockConnector.executeQuery(eq(cypher))).thenReturn(mockRecords);
+
+        List<Map<String, Object>> results = sdk.executeRecords(cypher);
+
+        assertEquals(5000, results.size(), "纯物理查询应被默认 limit 截断到 5000");
+    }
+
+    @Test
+    @DisplayName("final result size is capped at 8000")
+    void executeCapsResultSizeAtEightThousand() {
+        String cypher = "MATCH (n:Person) RETURN n LIMIT 9000";
+        ExecutionPlan plan = createDirectExecutionPlan();
+        plan.getGlobalContext().setMaxResultSize(8000);
+        com.fangyang.federatedquery.plan.GlobalContext.LimitSpec limitSpec =
+                new com.fangyang.federatedquery.plan.GlobalContext.LimitSpec();
+        limitSpec.setLimit(9000);
+        plan.getGlobalContext().setGlobalLimit(limitSpec);
+        List<Record> mockRecords = createManyMockRecords("n", "Person", 9001);
+
+        when(rewriter.rewrite(any())).thenReturn(plan);
+        when(mockConnector.executeQuery(eq(cypher))).thenReturn(mockRecords);
+
+        List<Map<String, Object>> results = sdk.executeRecords(cypher);
+
+        assertEquals(8000, results.size(), "最终结果集不得超过 8000");
+        assertEquals(8000, plan.getGlobalContext().getGlobalLimit().getLimit(), "过大的显式 LIMIT 应被收口到 8000");
+    }
+
     private ExecutionPlan createDirectExecutionPlan() {
         ExecutionPlan plan = new ExecutionPlan();
         plan.setDirectExecution(true);
         plan.setHasVirtualElements(false);
         return plan;
+    }
+
+    private List<Record> createManyMockRecords(String varName, String label, int count) {
+        List<Record> records = new ArrayList<>();
+        for (int i = 1; i <= count; i++) {
+            records.addAll(createMockRecords(varName, label, Map.of("name", "name-" + i)));
+        }
+        return records;
     }
     
     private List<Record> createMockRecords(String varName, String label, Map<String, Object> properties) {

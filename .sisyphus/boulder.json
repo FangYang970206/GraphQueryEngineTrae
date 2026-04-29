@@ -1,9 +1,10 @@
 {
-  "active_plan": "D:\\AI_Project\\GraphQueryEngine\\.sisyphus\\plans\\federated-query-engine.md",
-  "started_at": "2026-04-03T16:52:43.913Z",
+  "active_plan": "D:\\AI_Project\\GraphQueryEngine\\.sisyphus\\plans\\constraint-compliance-fix.md",
+  "started_at": "2026-04-22T16:26:31.082Z",
   "session_ids": [
-    "ses_2abbd19a0ffe2x8eGOgK0v2hhl"
+    "ses_24a221fd7ffeAuojSIALVS0Mkg",
+    "ses_24a0746d5ffelU9O5AqvArTOvM"
   ],
-  "plan_name": "federated-query-engine",
+  "plan_name": "constraint-compliance-fix",
   "agent": "atlas"
 }

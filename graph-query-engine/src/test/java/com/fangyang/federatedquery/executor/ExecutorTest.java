@@ -452,4 +452,56 @@ class ExecutorTest {
         assertFalse(exception.getMessage().toLowerCase(Locale.ROOT).contains("timeout"),
                 "Batch non-timeout failure should not be mislabeled as timeout");
     }
+
+    @Test
+    @DisplayName("Dependent physical query executes after external query and merges source row")
+    void dependentPhysicalQueryExecutesAfterExternalQuery() {
+        MockExternalAdapter tugraphAdapter = new MockExternalAdapter();
+        tugraphAdapter.setDataSourceName("tugraph");
+        executor.registerAdapter("tugraph", tugraphAdapter);
+
+        GraphEntity kpi = GraphEntity.node("kpi-1", "KPI");
+        kpi.setVariableName("kpi");
+        kpi.setProperty("parentResId", "ltp-1");
+        mockAdapter.registerResponse("queryKpi", MockExternalAdapter.MockResponse.create().addRowEntities(kpi));
+
+        GraphEntity ltp = GraphEntity.node("ltp-1", "LTP");
+        ltp.setVariableName("ltp");
+        ltp.setProperty("resId", "ltp-1");
+        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addRowEntities(ltp));
+
+        ExecutionPlan plan = new ExecutionPlan();
+        plan.setPlanId("first-hop-plan");
+
+        ExternalQuery externalQuery = new ExternalQuery();
+        externalQuery.setId("external-q1");
+        externalQuery.setDataSource("mock-service");
+        externalQuery.setOperator("queryKpi");
+        externalQuery.addOutputVariable("kpi");
+        plan.addExternalQuery(externalQuery);
+
+        PhysicalQuery physicalQuery = new PhysicalQuery();
+        physicalQuery.setId("physical-q1");
+        physicalQuery.setCypher("MATCH (ltp:LTP) WHERE ltp.resId IN $ltp_resId_ids RETURN ltp");
+        physicalQuery.setDependsOnExternalQuery(true);
+        physicalQuery.setSourceVariableName("kpi");
+        physicalQuery.setDependencySourceField("parentResId");
+        physicalQuery.setDependencyTargetVariable("ltp");
+        physicalQuery.setDependencyTargetField("resId");
+        physicalQuery.setDependencyParameterName("ltp_resId_ids");
+        plan.addPhysicalQuery(physicalQuery);
+
+        ExecutionResult result = executor.execute(plan).join();
+
+        assertEquals(1, result.getExternalResults().size(), "应先执行独立外部查询");
+        assertTrue(physicalQuery.getParameters().containsKey("ltp_resId_ids"), "外部结果应回填物理查询参数");
+        assertEquals(List.of("ltp-1"), physicalQuery.getParameters().get("ltp_resId_ids"), "应使用外部字段值驱动物理查询");
+
+        List<QueryResult> physicalResults = result.getPhysicalResults().get("physical-q1");
+        assertNotNull(physicalResults, "应保留依赖物理查询结果");
+        assertEquals(1, physicalResults.size(), "应只有一条依赖物理查询结果");
+        assertEquals(1, physicalResults.get(0).getRows().size(), "应生成合并后的结果行");
+        assertTrue(physicalResults.get(0).getRows().get(0).getEntitiesByVariable().containsKey("kpi"), "结果行应包含外部变量");
+        assertTrue(physicalResults.get(0).getRows().get(0).getEntitiesByVariable().containsKey("ltp"), "结果行应包含物理变量");
+    }
 }

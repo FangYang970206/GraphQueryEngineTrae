@@ -45,11 +45,13 @@ Cypher → CypherParserFacade (ANTLR4 + Caffeine cache) → AST (Program)
 
 ## Core Constraints (Hard Rules)
 
-1. **Virtual edge/node boundary**: Only allowed at **first hop** or **last hop** of a path. No `[physical]→[virtual]→[physical]` sandwich structures. Enforced by `VirtualEdgeConstraintException`.
-2. **Read-only**: No `CREATE`, `MERGE`, `DELETE`, `SET`, `REMOVE`. Only `MATCH`, `RETURN`, `WITH`, `WHERE`, `ORDER BY`, `LIMIT`, `SKIP`, `UNION`.
-3. **WHERE pushdown**: Conditions on virtual nodes must NOT be pushed to TuGraph — they become Java-level filters for external queries.
-4. **Global sort/limit**: `ORDER BY` and `LIMIT` are stripped from physical queries, applied in-memory after aggregation.
-5. **No N+1**: External queries are batched via `BatchingStrategy`. Never loop-call external APIs.
+1. **Virtual edge/node boundary**: Virtual edges are allowed only at the **first hop** or **last hop** of a multi-hop path. Single-hop virtual edges, pure virtual nodes, virtual-to-virtual paths, and `[physical]→[virtual]→[physical]` sandwich structures are rejected.
+2. **Read-only scope**: No `CREATE`, `MERGE`, `DELETE`, `SET`, `REMOVE`, `UNWIND`, `OPTIONAL MATCH`, `CALL`, or `SKIP`. Supported query clauses are `MATCH`, `RETURN`, `WITH`, `WHERE`, `ORDER BY`, `LIMIT`, `UNION`, `UNION ALL`, plus `USING SNAPSHOT` and `PROJECT BY`.
+3. **Start-pattern rule**: The first node in each `MATCH` pattern must declare a label. Variable-length paths are not supported.
+4. **WHERE pushdown**: Route `WHERE` conditions to the relevant data source by variable ownership. Do not keep the old "partial pushdown only" behavior; physical predicates go with TuGraph queries, virtual predicates go with external queries, and execution order must stay consistent with edge direction.
+5. **Execution order**: First-hop virtual edges execute as `external → extract IDs → TuGraph`; last-hop virtual edges execute as `TuGraph → extract IDs → external`; mixed `|` branches are split and merged as separate paths.
+6. **Result limits**: `SKIP` is unsupported. Default effective limits are `1000` for external-source plans and `5000` for pure TuGraph plans; the final result set must not exceed `8000`.
+7. **No N+1**: External queries are batched via `BatchingStrategy`. Never loop-call external APIs.
 
 ## Metadata-Driven Rules
 

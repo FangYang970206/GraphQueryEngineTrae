@@ -21,6 +21,7 @@ import com.fangyang.federatedquery.rewriter.PhysicalQueryBuilder;
 import com.fangyang.federatedquery.rewriter.QueryRewriter;
 import com.fangyang.federatedquery.rewriter.VirtualEdgeDetector;
 import com.fangyang.federatedquery.sdk.GraphQuerySDK;
+import com.fangyang.federatedquery.validation.ScopeValidator;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -90,8 +91,8 @@ public final class GraphQueryMetaFactory {
     }
 
     public GraphQuerySDK createSdk() {
-        CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor());
         VirtualEdgeDetector detector = new VirtualEdgeDetector(metadataQueryService);
+        CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor(), new ScopeValidator(metadataQueryService, detector));
         PhysicalQueryBuilder physicalQueryBuilder = new PhysicalQueryBuilder();
         MixedPatternRewriter mixedPatternRewriter = new MixedPatternRewriter(metadataQueryService, physicalQueryBuilder);
         QueryRewriter rewriter = new QueryRewriter(metadataQueryService, detector, new WhereConditionPushdown(metadataQueryService), physicalQueryBuilder, mixedPatternRewriter);
@@ -107,8 +108,8 @@ public final class GraphQueryMetaFactory {
     }
 
     public GraphQuerySDK createSdk(TuGraphConnector connector) {
-        CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor());
         VirtualEdgeDetector detector = new VirtualEdgeDetector(metadataQueryService);
+        CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor(), new ScopeValidator(metadataQueryService, detector));
         PhysicalQueryBuilder physicalQueryBuilder = new PhysicalQueryBuilder();
         MixedPatternRewriter mixedPatternRewriter = new MixedPatternRewriter(metadataQueryService, physicalQueryBuilder);
         QueryRewriter rewriter = new QueryRewriter(metadataQueryService, detector, new WhereConditionPushdown(metadataQueryService), physicalQueryBuilder, mixedPatternRewriter);
@@ -140,7 +141,8 @@ public final class GraphQueryMetaFactory {
     }
 
     public CypherParserFacade createParser() {
-        return new CypherParserFacade(new CypherASTVisitor());
+        VirtualEdgeDetector detector = new VirtualEdgeDetector(metadataQueryService);
+        return new CypherParserFacade(new CypherASTVisitor(), new ScopeValidator(metadataQueryService, detector));
     }
 
     public static GraphQueryMetaFactory create() {

@@ -140,7 +140,7 @@ class AggregatorTest {
     }
     
     @Test
-    @DisplayName("Pagination applies skip and limit")
+    @DisplayName("Pagination applies limit without skip semantics")
     void pagination() {
         List<PathBuilder.Path> paths = new ArrayList<>();
         
@@ -155,14 +155,13 @@ class AggregatorTest {
         }
         
         GlobalContext.LimitSpec limit = new GlobalContext.LimitSpec();
-        limit.setSkip(5);
         limit.setLimit(10);
         
         PagedResult result = sorter.sortAndPaginate(paths, null, limit);
         
         assertNotNull(result, "PagedResult不能为空");
         assertEquals(10, result.getPaths().size(), "Paths数量必须是10");
-        assertEquals(5, result.getSkip(), "Skip必须是5");
+        assertEquals(0, result.getSkip(), "当前 scope 下不应再依赖 SKIP 语义");
         assertEquals(10, result.getLimit(), "Limit必须是10");
         assertEquals(20, result.getTotalCount(), "TotalCount必须是20");
         
@@ -174,7 +173,7 @@ class AggregatorTest {
             
             GraphEntity entity = path.getElements().get(0).getEntity();
             assertNotNull(entity, "Entity不能为空");
-            assertEquals(i + 5, entity.getProperty("index"), "分页偏移必须正确");
+            assertEquals(i, entity.getProperty("index"), "limit-only 分页应保留前 10 条结果");
         }
     }
     

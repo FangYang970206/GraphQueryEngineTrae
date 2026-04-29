@@ -29,8 +29,6 @@ public class GlobalSorter {
         public int getLimit() { return limit; }
     }
 
-    private static final int DEFAULT_LIMIT = Integer.MAX_VALUE;
-
     public PagedResult sortAndPaginate(List<PathBuilder.Path> paths, GlobalContext.OrderSpec orderSpec, GlobalContext.LimitSpec limitSpec) {
         if (paths == null || paths.isEmpty()) {
             return new PagedResult(new ArrayList<>(), 0, limitSpec != null ? limitSpec.getSkip() : 0, limitSpec != null ? limitSpec.getLimit() : 0);
@@ -57,7 +55,6 @@ public class GlobalSorter {
         if (skip >= resultPaths.size()) {
             return new PagedResult(new ArrayList<>(), totalCount, skip, limit);
         }
-
         int end = Math.min(skip + limit, resultPaths.size());
         return new PagedResult(new ArrayList<>(resultPaths.subList(skip, end)), totalCount, skip, limit);
     }
@@ -144,11 +141,9 @@ public class GlobalSorter {
 
         int skip = limitSpec.getSkip();
         int limit = limitSpec.getLimit() > 0 ? limitSpec.getLimit() : paths.size();
-
         if (skip >= paths.size()) {
             return new ArrayList<>();
         }
-
         int end = Math.min(skip + limit, paths.size());
         return new ArrayList<>(paths.subList(skip, end));
     }
@@ -269,11 +264,9 @@ public class GlobalSorter {
 
         int skip = limitSpec.getSkip();
         int limit = limitSpec.getLimit() > 0 ? limitSpec.getLimit() : results.size();
-
         if (skip >= results.size()) {
             return new ArrayList<>();
         }
-
         int end = Math.min(skip + limit, results.size());
         return new ArrayList<>(results.subList(skip, end));
     }

@@ -2,26 +2,19 @@ package com.fangyang.federatedquery.parser;
 
 import com.fangyang.federatedquery.ast.*;
 import com.fangyang.federatedquery.exception.SyntaxErrorException;
+import com.fangyang.federatedquery.validation.ScopeValidator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Spy;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@ExtendWith(MockitoExtension.class)
 class ParserTest {
-    @Spy
-    private CypherASTVisitor astVisitor = new CypherASTVisitor();
-    @InjectMocks
-    private CypherParserFacade parser;
+    private final CypherParserFacade parser = new CypherParserFacade(new CypherASTVisitor(), new ScopeValidator());
     
     @Test
     @DisplayName("Parse simple MATCH clause")
     void matchClause() {
-        String cypher = "MATCH (n) RETURN n";
+        String cypher = "MATCH (n:Person) RETURN n";
         Program program = parser.parse(cypher);
         
         assertNotNull(program, "Program不能为空");
@@ -45,7 +38,7 @@ class ParserTest {
     @Test
     @DisplayName("Parse RETURN clause")
     void returnClause() {
-        String cypher = "MATCH (n) RETURN n";
+        String cypher = "MATCH (n:Person) RETURN n";
         Program program = parser.parse(cypher);
         
         assertNotNull(program, "Program不能为空");
@@ -96,7 +89,7 @@ class ParserTest {
     @Test
     @DisplayName("Parse UNION query")
     void unionQuery() {
-        String cypher = "MATCH (n) RETURN n UNION MATCH (m) RETURN m";
+        String cypher = "MATCH (n:Person) RETURN n UNION MATCH (m:Person) RETURN m";
         Program program = parser.parse(cypher);
         
         assertNotNull(program, "Program不能为空");
@@ -114,7 +107,7 @@ class ParserTest {
     @Test
     @DisplayName("Parse UNION ALL query")
     void unionAllQuery() {
-        String cypher = "MATCH (n) RETURN n UNION ALL MATCH (m) RETURN m";
+        String cypher = "MATCH (n:Person) RETURN n UNION ALL MATCH (m:Person) RETURN m";
         Program program = parser.parse(cypher);
         
         assertNotNull(program, "Program不能为空");
@@ -166,7 +159,7 @@ class ParserTest {
     @Test
     @DisplayName("Parse with ORDER BY and LIMIT")
     void orderByAndLimit() {
-        String cypher = "MATCH (n) RETURN n ORDER BY n.name DESC LIMIT 10";
+        String cypher = "MATCH (n:Person) RETURN n ORDER BY n.name DESC LIMIT 10";
         Program program = parser.parse(cypher);
         
         assertNotNull(program, "Program不能为空");
@@ -191,7 +184,7 @@ class ParserTest {
     @Test
     @DisplayName("Parse cached query returns same result")
     void cachedParse() {
-        String cypher = "MATCH (n) RETURN n";
+        String cypher = "MATCH (n:Person) RETURN n";
         
         Program first = parser.parseCached(cypher);
         Program second = parser.parseCached(cypher);
@@ -223,5 +216,35 @@ class ParserTest {
         assertEquals("n", node.getVariable(), "变量名必须是n");
         assertEquals(1, node.getLabels().size(), "标签数量必须为1");
         assertTrue(node.getLabels().contains("Person"), "必须包含Person标签");
+    }
+
+    @Test
+    @DisplayName("Reject unlabeled start node")
+    void rejectUnlabeledStartNode() {
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("MATCH (n) RETURN n"));
+    }
+
+    @Test
+    @DisplayName("Reject OPTIONAL MATCH")
+    void rejectOptionalMatch() {
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("OPTIONAL MATCH (n:Person) RETURN n"));
+    }
+
+    @Test
+    @DisplayName("Reject UNWIND")
+    void rejectUnwind() {
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("UNWIND [1, 2, 3] AS x RETURN x"));
+    }
+
+    @Test
+    @DisplayName("Reject SKIP")
+    void rejectSkip() {
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("MATCH (n:Person) RETURN n SKIP 1 LIMIT 2"));
+    }
+
+    @Test
+    @DisplayName("Reject variable-length path")
+    void rejectVariableLengthPath() {
+        assertThrows(SyntaxErrorException.class, () -> parser.parse("MATCH (n:Person)-[:KNOWS*1..2]->(m:Person) RETURN n, m"));
     }
 }

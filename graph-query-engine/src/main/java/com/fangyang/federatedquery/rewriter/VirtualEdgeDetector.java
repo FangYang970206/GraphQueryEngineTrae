@@ -24,9 +24,7 @@ public class VirtualEdgeDetector {
         for (Pattern.PatternPart part : pattern.getPatternParts()) {
             detectInPatternPart(part, result);
         }
-        
-        validateConstraints(result);
-        
+
         return result;
     }
     
@@ -40,6 +38,7 @@ public class VirtualEdgeDetector {
         }
         
         List<Pattern.PatternElementChain> chains = element.getChains();
+        List<Boolean> edgeKindsInOrder = new ArrayList<>();
         for (int i = 0; i < chains.size(); i++) {
             Pattern.PatternElementChain chain = chains.get(i);
             RelationshipPattern rel = chain.getRelationshipPattern();
@@ -48,12 +47,15 @@ public class VirtualEdgeDetector {
             boolean isFirst = (i == 0);
             boolean isLast = (i == chains.size() - 1);
             
-            checkRelationshipVirtual(rel, startNode, endNode, isFirst, isLast, result);
+            boolean hasVirtualRelationship = checkRelationshipVirtual(rel, startNode, endNode, isFirst, isLast, result);
+            edgeKindsInOrder.add(hasVirtualRelationship);
             
             checkNodeVirtual(endNode, result);
             
             startNode = endNode;
         }
+
+        validatePatternConstraints(element, edgeKindsInOrder, result);
     }
     
     private void checkNodeVirtual(NodePattern node, DetectionResult result) {
@@ -83,9 +85,9 @@ public class VirtualEdgeDetector {
         }
     }
     
-    private void checkRelationshipVirtual(RelationshipPattern rel, NodePattern startNode, 
-                                          NodePattern endNode, boolean isFirst, boolean isLast,
-                                          DetectionResult result) {
+    private boolean checkRelationshipVirtual(RelationshipPattern rel, NodePattern startNode,
+                                             NodePattern endNode, boolean isFirst, boolean isLast,
+                                             DetectionResult result) {
         List<String> virtualTypes = new ArrayList<>();
         List<String> physicalTypes = new ArrayList<>();
         
@@ -136,45 +138,56 @@ public class VirtualEdgeDetector {
             part.setProperties(rel.getProperties());
             result.addPhysicalEdgePart(part);
         }
+
+        return !virtualTypes.isEmpty();
     }
-    
-    private void validateConstraints(DetectionResult result) {
-        List<EdgePart> allEdges = new ArrayList<>();
-        for (PhysicalEdgePart p : result.getPhysicalEdgeParts()) {
-            allEdges.add(new EdgePart(p, false));
+
+    private void validatePatternConstraints(Pattern.PatternElement element, List<Boolean> edgeKindsInOrder, DetectionResult result) {
+        List<NodePattern> nodeOrder = new ArrayList<>();
+        if (element.getNodePattern() != null) {
+            nodeOrder.add(element.getNodePattern());
         }
-        for (VirtualEdgePart v : result.getVirtualEdgeParts()) {
-            allEdges.add(new EdgePart(v, true));
+        for (Pattern.PatternElementChain chain : element.getChains()) {
+            nodeOrder.add(chain.getNodePattern());
         }
-        
-        boolean foundPhysical = false;
-        boolean foundVirtual = false;
-        boolean foundPhysicalAfterVirtual = false;
-        
-        for (EdgePart edge : allEdges) {
-            if (edge.isVirtual) {
-                if (foundPhysical && foundPhysicalAfterVirtual) {
-                    result.addError("Invalid pattern: [physical]->[virtual]->[physical] sandwich structure is not allowed");
-                    break;
-                }
-                foundVirtual = true;
-            } else {
-                if (foundVirtual) {
-                    foundPhysicalAfterVirtual = true;
-                }
-                foundPhysical = true;
+
+        if (edgeKindsInOrder.size() == 1 && edgeKindsInOrder.get(0)) {
+            result.addError("Single-hop virtual edges are not supported");
+        }
+
+        if (!nodeOrder.isEmpty() && nodeOrder.size() == 1 && isVirtualNode(nodeOrder.get(0))) {
+            result.addError("Pure virtual node patterns are not supported");
+        }
+
+        for (int i = 0; i < edgeKindsInOrder.size(); i++) {
+            if (!edgeKindsInOrder.get(i)) {
+                continue;
+            }
+
+            NodePattern leftNode = i < nodeOrder.size() ? nodeOrder.get(i) : null;
+            NodePattern rightNode = i + 1 < nodeOrder.size() ? nodeOrder.get(i + 1) : null;
+            if (isVirtualNode(leftNode) && isVirtualNode(rightNode)) {
+                result.addError("Virtual-to-virtual patterns are not supported");
+            }
+        }
+
+        for (int i = 1; i < edgeKindsInOrder.size() - 1; i++) {
+            if (edgeKindsInOrder.get(i) && !edgeKindsInOrder.get(i - 1) && !edgeKindsInOrder.get(i + 1)) {
+                result.addError("Invalid pattern: [physical]->[virtual]->[physical] sandwich structure is not allowed");
             }
         }
     }
-    
-    private static class EdgePart {
-        final Object part;
-        final boolean isVirtual;
-        
-        EdgePart(Object part, boolean isVirtual) {
-            this.part = part;
-            this.isVirtual = isVirtual;
+
+    private boolean isVirtualNode(NodePattern nodePattern) {
+        if (nodePattern == null || nodePattern.getLabels().isEmpty()) {
+            return false;
         }
+        for (String label : nodePattern.getLabels()) {
+            if (metadataQueryService.isVirtualLabel(label)) {
+                return true;
+            }
+        }
+        return false;
     }
     
     public static class DetectionResult {

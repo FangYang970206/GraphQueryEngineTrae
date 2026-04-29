@@ -12,6 +12,7 @@ import com.fangyang.federatedquery.executor.ExecutionResult;
 import com.fangyang.metadata.MetadataQueryService;
 import com.fangyang.federatedquery.parser.CypherParserFacade;
 import com.fangyang.federatedquery.plan.ExecutionPlan;
+import com.fangyang.federatedquery.plan.GlobalContext;
 import com.fangyang.federatedquery.plan.PhysicalQuery;
 import com.fangyang.federatedquery.rewriter.QueryRewriter;
 import com.fangyang.common.JsonUtil;
@@ -143,7 +144,9 @@ public class GraphQuerySDK {
         ExecutionPlan plan = rewriter.rewrite(ast);
         
         if (plan.isDirectExecution() && tugraphConnector != null) {
-            return executeDirectQuery(ast, params);
+            List<Map<String, Object>> results = executeDirectQuery(ast, params);
+            results = globalSorter.applySortAndPagination(results, ensureEffectiveLimits(plan));
+            return applyResultCap(results, plan);
         }
         
         if (params != null && !params.isEmpty()) {
@@ -157,9 +160,9 @@ public class GraphQuerySDK {
         List<Map<String, Object>> results = resultConverter.buildResults(ast, execResult);
         results = pendingFilterApplier.apply(results, plan.getGlobalContext().getValidationFilters(), params);
         results = pendingFilterApplier.apply(results, plan.getGlobalContext().getPendingFilters(), params);
-        results = globalSorter.applySortAndPagination(results, plan.getGlobalContext());
+        results = globalSorter.applySortAndPagination(results, ensureEffectiveLimits(plan));
         results = applyDeduplication(results, ast);
-        return results;
+        return applyResultCap(results, plan);
     }
 
     private List<Map<String, Object>> executeDirectQuery(Program ast, Map<String, Object> params) {
@@ -377,5 +380,26 @@ public class GraphQuerySDK {
         }
         return new GraphQueryException(ErrorCode.QUERY_EXECUTION_ERROR, 
                 cause != null ? cause.getMessage() : e.getMessage(), cause);
+    }
+
+    private GlobalContext ensureEffectiveLimits(ExecutionPlan plan) {
+        GlobalContext context = plan.getGlobalContext();
+        if (context.getGlobalLimit() == null && context.isHasImplicitLimit() && context.getImplicitLimit() > 0) {
+            GlobalContext.LimitSpec limitSpec = new GlobalContext.LimitSpec();
+            limitSpec.setLimit(context.getImplicitLimit());
+            context.setGlobalLimit(limitSpec);
+        }
+        if (context.getGlobalLimit() != null && context.getGlobalLimit().getLimit() > context.getMaxResultSize()) {
+            context.getGlobalLimit().setLimit(context.getMaxResultSize());
+        }
+        return context;
+    }
+
+    private List<Map<String, Object>> applyResultCap(List<Map<String, Object>> results, ExecutionPlan plan) {
+        int maxResultSize = plan.getGlobalContext().getMaxResultSize();
+        if (results == null || results.size() <= maxResultSize) {
+            return results;
+        }
+        return new ArrayList<>(results.subList(0, maxResultSize));
     }
 }

@@ -2,410 +2,159 @@
 
 ## 1. 概述
 
-### 1.1 系统定位
+本 SDK 位于应用层与底层数据源之间，把受限 Cypher 作为统一查询协议，完成解析、重写、联邦执行和结果聚合。
 
-本 SDK 定位于客户端（应用层）与底层数据源（TuGraph / 外部服务）之间的中间件层。它将 Cypher 语言视为统一的数据访问协议，通过抽象语法树（AST）解析、重写、分发，最终在内存中将异构数据融合成统一的图结构返回。
+核心处理流程：
 
-### 1.2 核心处理流程
-
-```
-Cypher 输入
-    ↓
-解析层 (Parser) - ANTLR4 生成 AST
-    ↓
-计划生成层 (Planner & Rewriter) - 基于元数据裂变为执行计划
-    ↓
-联邦执行层 (Federated Executor) - 并行请求 TuGraph 和外部服务
-    ↓
-结果聚合层 (Result Stitcher) - 内存数据对齐、路径拼接、排序分页
-    ↓
-JSON 输出
+```text
+Cypher
+  -> Parser / AST
+  -> Rewriter / ExecutionPlan
+  -> Federated Executor
+  -> Result Stitcher / Sort / Limit / Union
+  -> JSON
 ```
 
-## 2. 核心约束
+## 2. 语法范围
 
-### 2.1 边界约束
+### 2.1 支持的子句
 
-虚拟边/虚拟节点仅允许出现在图遍历路径的**第一跳**或**最后一跳**。
+- `MATCH`
+- `RETURN`
+- `WITH`
+- `WHERE`
+- `ORDER BY`
+- `LIMIT`
+- `UNION`
+- `UNION ALL`
+- `USING SNAPSHOT`
+- `PROJECT BY`
 
-**禁止的模式**：
-```
-[物理节点] -> [虚拟节点] -> [物理节点]  ❌ 夹心结构
-```
+### 2.2 不支持的子句
 
-**允许的模式**：
-```
-[虚拟节点] -> [物理节点]              ✅ 第一跳
-[物理节点] -> [虚拟节点]              ✅ 最后一跳
-[虚拟节点] -> [虚拟节点]              ✅ 纯虚拟查询
-```
+- `OPTIONAL MATCH`
+- `UNWIND`
+- `CALL`
+- `SKIP`
+- 所有写语句：`CREATE`、`MERGE`、`DELETE`、`DETACH DELETE`、`SET`、`REMOVE`
 
-### 2.2 读写分离约束
+### 2.3 模式与表达式约束
 
-SDK 仅支持**只读查询**，任何包含写操作的语句将抛出异常。
+- `MATCH` 的起点节点必须显式声明 `label`
+- 支持命名路径、多关系类型、属性字面量过滤
+- 不支持变长路径
+- 支持比较、`AND/OR/NOT`、`IS NULL`、`IS NOT NULL`、`IN`、`STARTS WITH`、`ENDS WITH`、`CONTAINS`
+- 聚合函数仅支持 `count`、`sum`、`avg`、`min`、`max`
+- 跨数据源聚合字段不允许
 
-**支持的语句**：
-- `MATCH` - 模式匹配
-- `RETURN` - 结果返回
-- `WITH` - 中间处理
-- `WHERE` - 条件过滤
-- `ORDER BY` - 排序
-- `LIMIT` / `SKIP` - 分页
-- `UNION` / `UNION ALL` - 结果合并
-- `UNWIND` - 列表展开
-- `OPTIONAL MATCH` - 可选匹配
+## 3. 联邦边界约束
 
-**不支持的语句**：
-- `CREATE` - 创建节点/关系
-- `MERGE` - 合并节点/关系
-- `DELETE` / `DETACH DELETE` - 删除节点/关系
-- `SET` - 设置属性
-- `REMOVE` - 删除属性
+### 3.1 虚拟边与虚拟点
 
-### 2.3 存储过程调用约束
+- 虚拟边仅允许出现在多跳路径的第一跳或最后一跳
+- 单跳虚拟边不允许
+- 纯虚拟点不允许
+- 虚拟到虚拟路径不允许
+- `[物理] -> [虚拟] -> [物理]` 三明治结构不允许
 
-**`CALL ... YIELD` 存储过程调用不经过联邦层**。
+### 3.2 执行顺序
 
-存储过程调用具有以下特点：
-1. **无外部数据源**：存储过程完全在 TuGraph 内部执行，不涉及外部数据源
-2. **直接路由**：此类查询应直接发送到原生 TuGraph 执行
-3. **使用场景**：图算法调用（最短路径、PageRank 等）、元数据查询、系统管理操作
+| 场景 | 执行顺序 |
+|------|----------|
+| 第一跳虚拟 | 外部数据源 -> 提取映射字段 -> TuGraph |
+| 最后一跳虚拟 | TuGraph -> 提取映射字段 -> 外部数据源 |
+| 混合边 `|` | 物理边与虚拟边拆分执行，最终合并 |
 
-### 2.4 外部数据源关联约束
+`VirtualEdgeBinding.idMapping` 统一按“物理字段 -> 外部字段”定义；第一跳虚拟边按反向关联使用该映射。
 
-外部数据源通过虚拟边与内部数据源进行关联，内外节点通过属性进行映射。
+## 4. WHERE、排序与限制
 
-**映射规则**：
-- 外部数据源的实体必须有唯一标识符
-- 虚拟边定义中必须指定关联属性映射
-- 支持一对多和多对一的关联关系
+### 4.1 WHERE 下沉
 
-### 2.5 依赖感知执行约束
+- `WHERE` 按变量归属统一下沉到对应数据源
+- 物理条件进入 TuGraph 查询
+- 虚拟条件进入外部查询条件
+- 不再保留旧的“只允许部分下沉”的限制口径
 
-虚拟边的位置决定了数据流传递方向，系统根据虚拟边位置自动识别依赖关系并按正确顺序执行查询。
+### 4.2 排序与结果限制
 
-#### 2.5.1 虚拟边在第一跳（外部→物理）
+- `SKIP` 不支持，解析阶段直接报错
+- 支持 `ORDER BY` 和 `LIMIT`
+- 默认有效限制：
+  - 含外部查询的计划：`1000`
+  - 纯 TuGraph 计划：`5000`
+- 最终总结果集统一截断到 `8000`
 
-**数据流方向**：`外部数据源 → TuGraph`
+## 5. 批量执行约束
 
-**执行顺序**：
-1. 先执行外部数据源查询，获取起始节点集合
-2. 从外部数据源结果中提取节点ID
-3. 将ID集合作为TuGraph查询的输入条件
-4. 执行TuGraph查询
+- 禁止按单个 ID 循环请求外部数据源
+- `BatchingStrategy` 必须按同源同操作同过滤条件合并请求
+- 同一批次一次性传递完整 ID 集合
 
-**示例场景**：
-```
-查询: MATCH (kpi:KPI)-[:KPIBelongsToLTP]->(ltp:LTP) RETURN kpi, ltp
+## 6. 元数据要求
 
-流程:
-1. 外部查询获取KPI节点
-2. 提取KPI的ID列表
-3. TuGraph查询关联的LTP节点
-4. 拼接返回(kpi, ltp)对
-```
+### 6.1 数据源元数据
 
-#### 2.5.2 虚拟边在最后一跳（物理→外部）
-
-**数据流方向**：`TuGraph → 外部数据源`
-
-**执行顺序**：
-1. 先执行TuGraph物理查询，获取前置节点集合
-2. 从物理查询结果中提取源节点ID
-3. 将ID集合作为外部数据源查询的输入条件
-4. 执行外部数据源查询
-
-**示例场景**：
-```
-查询: MATCH (ne:NetworkElement)-[:NEHasLtps]->(ltp:LTP)-[:LTPHasKPI2]->(kpi:KPI) RETURN ne, ltp, kpi
-
-流程:
-1. TuGraph查询(ne, ltp)对
-2. 提取ltp的ID列表
-3. 外部查询获取关联的KPI节点
-4. 拼接返回(ne, ltp, kpi)三元组
-```
-
-#### 2.5.3 混合边场景
-
-同一跳包含虚拟边和物理边的组合（使用 `|` 操作符）时：
-- 物理边由TuGraph直接处理
-- 虚拟边触发依赖感知执行
-- 合并两种边的结果统一返回
-
-#### 2.5.4 空结果处理规则
-
-| 场景 | 物理查询结果 | 外部查询行为 | 最终结果 |
-|------|-------------|-------------|---------|
-| 物理查询返回空 | 无节点 | 不执行（无输入ID） | 空结果集 |
-| 外部查询返回空 | 有节点 | 执行但返回空 | 物理节点 + NULL外部节点 |
-| 两者都返回空 | 无节点 | 不执行 | 空结果集 |
-
-## 3. 数据源类型
-
-### 3.1 物理数据源
-
-| 类型 | 说明 |
+| 字段 | 说明 |
 |------|------|
-| TuGraph | 图数据库，存储核心图数据 |
+| `name` | 数据源名称 |
+| `type` | 数据源类型 |
+| `endpoint` | 服务地址 |
 
-### 3.2 外部数据源
+### 6.2 标签元数据
 
-| 类型 | 说明 |
+| 字段 | 说明 |
 |------|------|
-| REST API | HTTP 服务 |
-| gRPC | RPC 服务 |
-| 自定义 | 用户自定义数据源 |
+| `label` | 标签名 |
+| `virtual` | 是否虚拟标签 |
+| `dataSource` | 所属数据源 |
 
-## 4. 元数据定义
+### 6.3 虚拟边绑定
 
-### 4.1 数据源元数据
+| 字段 | 说明 |
+|------|------|
+| `edgeType` | 边类型 |
+| `targetDataSource` | 目标数据源 |
+| `targetLabel` | 目标标签 |
+| `operatorName` | 外部算子名 |
+| `idMapping` | 物理字段 -> 外部字段 |
+| `firstHopOnly` | 仅允许第一跳 |
+| `lastHopOnly` | 仅允许最后一跳 |
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| name | String | 数据源名称 |
-| type | Enum | 数据源类型 |
-| endpoint | String | 服务端点 |
-| config | Map | 额外配置 |
+## 7. 返回格式
 
-### 4.2 虚拟边绑定
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| edgeType | String | 边类型名称 |
-| targetDataSource | String | 目标数据源 |
-| operatorName | String | 操作名称 |
-| inputIdField | String | 输入ID字段 |
-| outputIdField | String | 输出ID字段 |
-| firstHopOnly | boolean | 仅允许第一跳 |
-| lastHopOnly | boolean | 仅允许最后一跳 |
-
-### 4.3 标签元数据
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| label | String | 标签名称 |
-| virtual | boolean | 是否虚拟 |
-| dataSource | String | 所属数据源 |
-| properties | List | 属性列表 |
-
-## 5. 返回格式规范
-
-### 5.1 节点返回格式
+### 7.1 行结果
 
 ```json
 [
   {
-    "variableName": {
-      "id": "nodeId",
-      "label": "LabelName",
-      "property1": "value1",
-      "property2": "value2"
+    "n": {
+      "id": "node-id",
+      "label": "Label",
+      "name": "value"
     }
   }
 ]
 ```
 
-### 5.2 Path 返回格式
+### 7.2 路径结果
 
 ```json
-{
-  "paths": [
-    [
-      {"type": "node", "label": "Label1", "props": {"name": "value"}},
-      {"type": "edge", "label": "RELATIONSHIP", "props": {}},
-      {"type": "node", "label": "Label2", "props": {"name": "value"}}
+[
+  {
+    "p": [
+      [
+        {"type": "node", "label": "A", "props": {"id": "1"}},
+        {"type": "edge", "label": "REL", "props": {}},
+        {"type": "node", "label": "B", "props": {"id": "2"}}
+      ]
     ]
-  ]
-}
-```
-
-**Path 元素规范**：
-- `type`: 元素类型，值为 `node` 或 `edge`
-- `label`: 节点标签或关系类型
-- `props`: 属性字典，包含所有属性键值对
-
-## 6. 性能规范
-
-### 6.1 批量请求策略
-
-**禁止**：在循环中逐个请求外部接口（N+1 问题）
-
-**要求**：批量请求，一次请求传递所有ID
-
-### 6.2 执行计划缓存
-
-- 缓存执行计划避免重复解析
-- 缓存键：Cypher 字符串的 Hash 值
-- 默认过期策略：LRU
-
-### 6.3 并行执行
-
-- UNION 查询的各部分并行执行
-- 无依赖的查询并行执行
-- 有依赖的查询按拓扑顺序执行
-
-## 7. 错误处理规范
-
-### 7.1 语法错误
-
-返回语法错误的位置和期望的token。
-
-### 7.2 约束违规
-
-返回违反的约束类型和具体原因。
-
-### 7.3 外部服务错误
-
-返回不可用的服务名称和错误原因。
-
-## 8. 扩展机制
-
-### 8.1 数据源适配器接口
-
-自定义数据源需实现适配器接口，提供以下能力：
-- 获取数据源类型和名称
-- 异步执行查询
-- 同步执行查询
-- 健康检查
-
-### 8.2 语法扩展
-
-在语法定义文件中添加新规则，并在AST访问器中实现对应逻辑。
-
-## 9. 安全规范
-
-### 9.1 参数化查询
-
-推荐使用参数化查询防止注入攻击，参数以 `$param` 形式传递。
-
-### 9.2 敏感信息保护
-
-- 不在日志中记录敏感参数
-- 不在错误消息中暴露内部实现细节
-- 外部服务调用使用安全协议 (HTTPS)
-
-## 10. 版本兼容性
-
-### 10.1 Java 版本
-
-- 最低要求：Java 17
-- 推荐版本：Java 17 LTS
-
-### 10.2 依赖版本
-
-| 依赖 | 最低版本 | 推荐版本 |
-|------|----------|----------|
-| Spring Framework | 6.0.0 | 6.1.6 |
-| ANTLR4 | 4.9.0 | 4.13.1 |
-| Caffeine | 3.0.0 | 3.1.8 |
-| Jackson | 2.14.0 | 2.17.0 |
-
-## 11. 测试规范
-
-### 11.1 单元测试
-
-- 每个模块必须有对应的单元测试
-- 测试覆盖率目标：80%+
-- 单元测试使用 Mock 数据源，不连接真实数据库
-
-### 11.2 端到端测试
-
-- 覆盖所有支持的查询场景
-- **单元测试必须使用 Mock 数据源**
-- **集成测试支持连接真实 TuGraph 数据库**
-- 验证返回格式的正确性
-
-### 11.3 TuGraph 连接器测试
-
-- 支持真实 TuGraph 数据库连接
-- 使用 Bolt 协议连接
-- 默认配置：`bolt://127.0.0.1:7687`，用户名：`admin`，密码：`73@TuGraph`
-- 测试在数据库不可用时自动跳过
-
-## 12. TuGraph 连接器规范
-
-### 12.1 连接配置
-
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| uri | bolt://127.0.0.1:7687 | TuGraph Bolt 协议地址 |
-| username | admin | 用户名 |
-| password | 73@TuGraph | 密码 |
-| maxConnectionPoolSize | 50 | 最大连接池大小 |
-| connectionTimeoutMs | 30000 | 连接超时时间（毫秒） |
-| maxTransactionRetryTimeMs | 30000 | 最大事务重试时间（毫秒） |
-
-### 12.2 连接器接口
-
-```java
-public interface TuGraphConnector {
-    List<Record> executeQuery(String cypher);
-    List<Record> executeQuery(String cypher, Object... parameters);
-    void close();
-    boolean isConnected();
-    TuGraphConfig getConfig();
-}
-```
-
-### 12.3 SDK 返回格式
-
-SDK 提供多种返回格式以兼容不同使用场景：
-
-#### 12.3.1 JSON 字符串格式（向后兼容）
-
-```java
-String result = sdk.execute(cypher);
-String result = sdk.executeRaw(cypher);
-```
-
-返回格式：
-```json
-[
-  {
-    "variableName": {
-      "id": "nodeId",
-      "label": "LabelName",
-      "property1": "value1"
-    }
   }
 ]
 ```
 
-#### 12.3.2 Map 列表格式（Neo4j-driver 兼容）
+## 8. 测试要求
 
-```java
-List<Map<String, Object>> records = sdk.executeRecords(cypher);
-```
-
-返回格式：
-```json
-[
-  {
-    "variableName": {
-      "_id": "nodeId",
-      "_labels": ["LabelName"],
-      "_properties": {
-        "property1": "value1"
-      }
-    }
-  }
-]
-```
-
-#### 12.3.3 Neo4j Record 格式（直接连接 TuGraph）
-
-```java
-List<Record> records = sdk.executeWithConnector(cypher);
-List<Record> records = sdk.executeWithConnector(cypher, "param", value);
-```
-
-返回 Neo4j-driver 原生 Record 对象，与直接使用 Neo4j-driver 完全一致。
-
-## 13. 变更日志
-
-| 版本 | 日期 | 变更内容 |
-|------|------|----------|
-| 1.0.0 | 2024-01 | 初始版本 |
-| 1.1.0 | 2024-04 | 添加依赖感知执行约束 |
-| 1.2.0 | 2025-04 | 添加 TuGraph 真实数据库连接支持，新增 Neo4j-driver 兼容返回格式 |
+- Parser/rewriter/E2E 必须以 `docs/rules/scope.md` 为唯一准入口径
+- 旧语义测试不得再把 `OPTIONAL MATCH`、`UNWIND`、`CALL`、`SKIP`、变长路径、纯虚拟点等视为成功能力
+- 新增标签、虚拟边和映射关系时，测试必须先注册完整元数据

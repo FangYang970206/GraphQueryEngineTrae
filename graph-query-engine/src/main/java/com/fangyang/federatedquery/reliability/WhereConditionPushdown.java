@@ -41,7 +41,7 @@ public class WhereConditionPushdown {
         if (expr instanceof LogicalExpression) {
             LogicalExpression logic = (LogicalExpression) expr;
             if (!"AND".equalsIgnoreCase(logic.getOperator())) {
-                result.addPostFilterCondition(Condition.forPostFilter(expr));
+                routeWholeExpression(expr, virtualVars, physicalVars, result);
                 return;
             }
             for (Expression operand : logic.getOperands()) {
@@ -51,14 +51,14 @@ public class WhereConditionPushdown {
         }
 
         if (!(expr instanceof Comparison)) {
-            result.addPostFilterCondition(Condition.forPostFilter(expr));
+            routeWholeExpression(expr, virtualVars, physicalVars, result);
             return;
         }
 
         Comparison comp = (Comparison) expr;
         Condition condition = extractCondition(comp);
         if (condition == null) {
-            result.addPostFilterCondition(Condition.forPostFilter(expr));
+            routeWholeExpression(expr, virtualVars, physicalVars, result);
             return;
         }
 
@@ -70,6 +70,19 @@ public class WhereConditionPushdown {
             result.addUnknownCondition(condition);
             result.addPostFilterCondition(condition);
         }
+    }
+
+    private void routeWholeExpression(
+            Expression expr,
+            Set<String> virtualVars,
+            Set<String> physicalVars,
+            PushdownResult result) {
+        ExpressionOwnership ownership = determineOwnership(expr, virtualVars, physicalVars);
+        if (ownership == ExpressionOwnership.PHYSICAL) {
+            result.addPhysicalCondition(Condition.forExpression(expr));
+            return;
+        }
+        result.addPostFilterCondition(Condition.forPostFilter(expr));
     }
 
     private Condition extractCondition(Comparison comp) {
@@ -166,6 +179,90 @@ public class WhereConditionPushdown {
             return ResolvedValue.resolved(values);
         }
         return ResolvedValue.unresolved();
+    }
+
+    private ExpressionOwnership determineOwnership(
+            Expression expr,
+            Set<String> virtualVars,
+            Set<String> physicalVars) {
+        Set<String> referencedVariables = new HashSet<>();
+        collectReferencedVariables(expr, referencedVariables);
+        if (referencedVariables.isEmpty()) {
+            return ExpressionOwnership.UNKNOWN;
+        }
+
+        boolean hasVirtual = false;
+        boolean hasPhysical = false;
+        boolean hasUnknown = false;
+        for (String variable : referencedVariables) {
+            if (virtualVars.contains(variable)) {
+                hasVirtual = true;
+            } else if (physicalVars.contains(variable)) {
+                hasPhysical = true;
+            } else {
+                hasUnknown = true;
+            }
+        }
+
+        if (hasUnknown || (hasVirtual && hasPhysical)) {
+            return ExpressionOwnership.MIXED;
+        }
+        if (hasPhysical) {
+            return ExpressionOwnership.PHYSICAL;
+        }
+        if (hasVirtual) {
+            return ExpressionOwnership.VIRTUAL;
+        }
+        return ExpressionOwnership.UNKNOWN;
+    }
+
+    private void collectReferencedVariables(Expression expr, Set<String> variables) {
+        if (expr == null) {
+            return;
+        }
+        if (expr instanceof Variable) {
+            variables.add(((Variable) expr).getName());
+            return;
+        }
+        if (expr instanceof PropertyAccess) {
+            PropertyAccess propertyAccess = (PropertyAccess) expr;
+            if (propertyAccess.getTarget() instanceof Variable) {
+                variables.add(((Variable) propertyAccess.getTarget()).getName());
+            } else {
+                collectReferencedVariables(propertyAccess.getTarget(), variables);
+            }
+            return;
+        }
+        if (expr instanceof Comparison) {
+            Comparison comparison = (Comparison) expr;
+            collectReferencedVariables(comparison.getLeft(), variables);
+            collectReferencedVariables(comparison.getRight(), variables);
+            return;
+        }
+        if (expr instanceof LogicalExpression) {
+            for (Expression operand : ((LogicalExpression) expr).getOperands()) {
+                collectReferencedVariables(operand, variables);
+            }
+            return;
+        }
+        if (expr instanceof FunctionCall) {
+            for (Expression argument : ((FunctionCall) expr).getArguments()) {
+                collectReferencedVariables(argument, variables);
+            }
+            return;
+        }
+        if (expr instanceof ListExpression) {
+            for (Expression element : ((ListExpression) expr).getElements()) {
+                collectReferencedVariables(element, variables);
+            }
+            return;
+        }
+        if (expr instanceof MapExpression) {
+            for (Expression value : ((MapExpression) expr).getEntries().values()) {
+                collectReferencedVariables(value, variables);
+            }
+            return;
+        }
     }
 
     private Set<String> extractVirtualVariables(Pattern pattern) {
@@ -312,6 +409,12 @@ public class WhereConditionPushdown {
             return condition;
         }
 
+        public static Condition forExpression(Expression expression) {
+            Condition condition = new Condition();
+            condition.setOriginalExpression(expression);
+            return condition;
+        }
+
         public String getVariable() {
             return variable;
         }
@@ -407,5 +510,12 @@ public class WhereConditionPushdown {
         public Object getValue() {
             return value;
         }
+    }
+
+    private enum ExpressionOwnership {
+        PHYSICAL,
+        VIRTUAL,
+        MIXED,
+        UNKNOWN
     }
 }

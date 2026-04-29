@@ -2,50 +2,46 @@ package com.fangyang.federatedquery.rewriter;
 
 import com.fangyang.federatedquery.ast.*;
 import com.fangyang.federatedquery.testutil.GraphQueryMetaFactory;
-import com.fangyang.metadata.*;
+import com.fangyang.metadata.MetadataQueryService;
 import com.fangyang.federatedquery.parser.CypherASTVisitor;
 import com.fangyang.federatedquery.parser.CypherParserFacade;
 import com.fangyang.federatedquery.plan.ExecutionPlan;
 import com.fangyang.federatedquery.plan.PhysicalQuery;
 import com.fangyang.federatedquery.plan.ExternalQuery;
 import com.fangyang.federatedquery.reliability.WhereConditionPushdown;
+import com.fangyang.federatedquery.validation.ScopeValidator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @ExtendWith(MockitoExtension.class)
 class RewriterTest {
-    @Spy
-    private MetadataQueryService metadataQueryService = MetadataFactory.createQueryService();
-        MetadataRegistrar metadataRegistrar = MetadataFactory.createRegistrar();
+    private MetadataQueryService metadataQueryService;
     private VirtualEdgeDetector detector;
     private WhereConditionPushdown whereConditionPushdown;
     private QueryRewriter rewriter;
-    @Spy
-    private CypherASTVisitor astVisitor = new CypherASTVisitor();
     private CypherParserFacade parser;
     
     @BeforeEach
     void setUp() {
-        GraphQueryMetaFactory.createStandard();
-
+        GraphQueryMetaFactory metaFactory = GraphQueryMetaFactory.createWithDruidZenith();
+        metadataQueryService = metaFactory.metadataQueryService();
         detector = new VirtualEdgeDetector(metadataQueryService);
         whereConditionPushdown = new WhereConditionPushdown(metadataQueryService);
         PhysicalQueryBuilder physicalQueryBuilder = new PhysicalQueryBuilder();
         MixedPatternRewriter mixedPatternRewriter = new MixedPatternRewriter(metadataQueryService, physicalQueryBuilder);
         rewriter = new QueryRewriter(metadataQueryService, detector, whereConditionPushdown, physicalQueryBuilder, mixedPatternRewriter);
-        parser = new CypherParserFacade(astVisitor);
+        parser = new CypherParserFacade(new CypherASTVisitor(), new ScopeValidator(metadataQueryService, detector));
     }
     
     @Test
     @DisplayName("Detect virtual edges in pattern")
     void detectVirtualEdges() {
-        String cypher = "MATCH (ne:NetworkElement)-[r:NEHasLtps|NEHasKPI]->(target) RETURN ne,target";
+        String cypher = "MATCH (ne:NetworkElement)-[r:NEHasLtps]->(ltp:LTP)-[:LTPHasKPI2]->(target:KPI2) RETURN ne,target";
         Program program = parser.parse(cypher);
         
         assertNotNull(program, "Program不能为空");
@@ -57,7 +53,7 @@ class RewriterTest {
         
         assertNotNull(result, "检测结果不能为空");
         assertTrue(result.hasVirtualElements(), "必须检测到虚拟元素");
-        assertTrue(result.getVirtualEdgeParts().size() >= 1, "虚拟边数量必须>=1");
+        assertEquals(1, result.getVirtualEdgeParts().size(), "虚拟边数量必须为1");
         
         for (VirtualEdgeDetector.VirtualEdgePart vep : result.getVirtualEdgeParts()) {
             assertNotNull(vep.getEdgeType(), "虚拟边类型不能为空");
@@ -89,12 +85,14 @@ class RewriterTest {
         String originalCypher = plan.getOriginalCypher();
         assertNotNull(originalCypher, "原始Cypher不能为空");
         assertTrue(originalCypher.contains("MATCH"), "原始Cypher必须包含MATCH");
+        assertTrue(plan.getGlobalContext().isHasImplicitLimit(), "未显式 LIMIT 时应补默认 limit");
+        assertEquals(5000, plan.getGlobalContext().getImplicitLimit(), "纯物理查询默认 limit 应为 5000");
     }
     
     @Test
     @DisplayName("Rewrite query with virtual edge")
     void rewriteWithVirtualEdge() {
-        String cypher = "MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) RETURN ne, kpi";
+        String cypher = "MATCH (ne:NetworkElement)-[:NEHasLtps]->(ltp:LTP)-[:LTPHasKPI2]->(kpi:KPI2) RETURN ne, ltp, kpi";
         Program program = parser.parse(cypher);
         
         assertNotNull(program, "Program不能为空");
@@ -109,15 +107,17 @@ class RewriterTest {
         ExternalQuery eq = plan.getExternalQueries().get(0);
         assertNotNull(eq.getId(), "ExternalQuery的Id不能为空");
         assertNotNull(eq.getDataSource(), "ExternalQuery的DataSource不能为空");
-        assertEquals("kpi-service", eq.getDataSource(), "DataSource必须是kpi-service");
+        assertEquals("druid-service", eq.getDataSource(), "DataSource必须是druid-service");
         assertNotNull(eq.getOperator(), "ExternalQuery的Operator不能为空");
-        assertEquals("getKPIByNeIds", eq.getOperator(), "Operator必须是getKPIByNeIds");
+        assertEquals("queryKpi2ByParentResId", eq.getOperator(), "Operator必须是queryKpi2ByParentResId");
+        assertTrue(plan.getGlobalContext().isHasImplicitLimit(), "含外部查询且未显式 LIMIT 时应补默认 limit");
+        assertEquals(1000, plan.getGlobalContext().getImplicitLimit(), "外部查询默认 limit 应为 1000");
     }
     
     @Test
     @DisplayName("Rewrite UNION query")
     void rewriteUnion() {
-        String cypher = "MATCH (n) RETURN n UNION MATCH (m) RETURN m";
+        String cypher = "MATCH (n:NetworkElement) RETURN n UNION MATCH (m:NetworkElement) RETURN m";
         Program program = parser.parse(cypher);
         
         assertNotNull(program, "Program不能为空");
@@ -136,7 +136,7 @@ class RewriterTest {
     @Test
     @DisplayName("Rewrite mixed UNION and UNION ALL")
     void rewriteMixedUnionAll() {
-        String cypher = "MATCH (n) RETURN n UNION ALL MATCH (m) RETURN m UNION MATCH (k) RETURN k";
+        String cypher = "MATCH (n:NetworkElement) RETURN n UNION ALL MATCH (m:NetworkElement) RETURN m UNION MATCH (k:NetworkElement) RETURN k";
         Program program = parser.parse(cypher);
         ExecutionPlan plan = rewriter.rewrite(program);
         assertEquals(1, plan.getUnionParts().size(), "必须有1个UnionPart");
@@ -144,13 +144,9 @@ class RewriterTest {
     }
     
     @Test
-    @DisplayName("Parse CREATE clause but skip in rewriter - read-only mode")
-    void skipUpdatingClause() {
-        String cypher = "CREATE (n:NetworkElement {name:'NE001'})";
-        Program program = parser.parse(cypher);
-        ExecutionPlan plan = rewriter.rewrite(program);
-        assertNotNull(plan);
-        assertTrue(plan.getPhysicalQueries().isEmpty(), "CREATE语句不应产生物理查询");
+    @DisplayName("Write clause fails before rewrite")
+    void rejectUpdatingClause() {
+        assertThrows(Exception.class, () -> parser.parse("CREATE (n:NetworkElement {name:'NE001'})"));
     }
     
     @Test
@@ -176,13 +172,16 @@ class RewriterTest {
     @Test
     @DisplayName("Virtual filter keeps operator semantics")
     void virtualFilterKeepsOperator() {
-        String cypher = "MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) WHERE kpi.value > 90 RETURN ne, kpi";
+        String cypher = "MATCH (ne:NetworkElement)-[:NEHasLtps]->(ltp:LTP)-[:LTPHasKPI2]->(kpi:KPI2) WHERE kpi.value > 90 RETURN ne, ltp, kpi";
         Program program = parser.parse(cypher);
 
         ExecutionPlan plan = rewriter.rewrite(program);
 
-        assertEquals(1, plan.getExternalQueries().size(), "应生成 1 条外部查询");
-        ExternalQuery query = plan.getExternalQueries().get(0);
+        assertTrue(plan.getExternalQueries().size() >= 1, "应生成至少 1 条外部查询");
+        ExternalQuery query = plan.getExternalQueries().stream()
+                .filter(current -> !current.getFilterConditions().isEmpty())
+                .findFirst()
+                .orElseThrow();
         assertEquals(1, query.getFilterConditions().size(), "应保留 1 条带操作符的过滤条件");
         assertEquals("value", query.getFilterConditions().get(0).getKey(), "应保留过滤字段");
         assertEquals(">", query.getFilterConditions().get(0).getOperator(), "应保留比较操作符");
@@ -191,16 +190,83 @@ class RewriterTest {
     }
 
     @Test
-    @DisplayName("Complex WHERE stays as post filter")
-    void complexWhereBecomesPostFilter() {
+    @DisplayName("Single-source OR WHERE pushes down to physical query")
+    void complexWherePushesDownWhenOwnedByPhysicalVariables() {
         String cypher = "MATCH (n:NetworkElement) WHERE n.name = 'NE001' OR n.name = 'NE002' RETURN n";
         Program program = parser.parse(cypher);
 
         ExecutionPlan plan = rewriter.rewrite(program);
 
         assertEquals(1, plan.getPhysicalQueries().size(), "应生成物理查询");
-        assertFalse(plan.getPhysicalQueries().get(0).getCypher().contains("WHERE"), "复杂逻辑不应被错误下推");
-        assertEquals(1, plan.getGlobalContext().getPendingFilters().size(), "复杂表达式应作为单条后置过滤保留");
-        assertNotNull(plan.getGlobalContext().getPendingFilters().get(0).getOriginalExpression(), "应保留原始表达式");
+        assertTrue(plan.getPhysicalQueries().get(0).getCypher().contains("WHERE"), "同源 OR 应整体下推");
+        assertTrue(plan.getPhysicalQueries().get(0).getCypher().contains(" OR "), "应保留 OR 逻辑");
+        assertTrue(plan.getGlobalContext().getPendingFilters().isEmpty(), "已整体下推的表达式不应再进入 pendingFilters");
+    }
+
+    @Test
+    @DisplayName("Single-hop virtual edge is rejected")
+    void rejectSingleHopVirtualEdge() {
+        assertThrows(Exception.class,
+                () -> parser.parse("MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi:KPI) RETURN ne, kpi"));
+    }
+
+    @Test
+    @DisplayName("Explicit LIMIT overrides implicit default")
+    void explicitLimitOverridesImplicitDefault() {
+        Program program = parser.parse("MATCH (n:NetworkElement) RETURN n LIMIT 42");
+
+        ExecutionPlan plan = rewriter.rewrite(program);
+
+        assertNotNull(plan.getGlobalContext().getGlobalLimit(), "显式 LIMIT 应写入全局 limit");
+        assertEquals(42, plan.getGlobalContext().getGlobalLimit().getLimit(), "应保留用户显式 LIMIT");
+        assertFalse(plan.getGlobalContext().isHasImplicitLimit(), "显式 LIMIT 时不应再追加隐式 limit");
+    }
+
+    @Test
+    @DisplayName("First-hop virtual edge rewrites as external then dependent physical query")
+    void rewriteFirstHopVirtualEdgeAsExternalThenPhysical() {
+        GraphQueryMetaFactory factory = GraphQueryMetaFactory.create()
+                .registerDataSource("tugraph", com.fangyang.metadata.DataSourceType.TUGRAPH_BOLT)
+                .registerDataSource("druid-service", com.fangyang.metadata.DataSourceType.REST_API)
+                .registerLabel("NetworkElement", false, "tugraph")
+                .registerLabel("LTP", false, "tugraph")
+                .registerLabel("KPI2", true, "druid-service")
+                .registerVirtualEdge("KPI2FromLTP", "druid-service", "queryKpi2ByParentResId", binding -> {
+                    binding.setTargetLabel("KPI2");
+                    binding.getIdMapping().put("resId", "parentResId");
+                    binding.setFirstHopOnly(true);
+                });
+
+        MetadataQueryService localMetadata = factory.metadataQueryService();
+        VirtualEdgeDetector localDetector = new VirtualEdgeDetector(localMetadata);
+        PhysicalQueryBuilder localBuilder = new PhysicalQueryBuilder();
+        QueryRewriter localRewriter = new QueryRewriter(
+                localMetadata,
+                localDetector,
+                new WhereConditionPushdown(localMetadata),
+                localBuilder,
+                new MixedPatternRewriter(localMetadata, localBuilder));
+        CypherParserFacade localParser = new CypherParserFacade(
+                new CypherASTVisitor(),
+                new ScopeValidator(localMetadata, localDetector));
+
+        Program program = localParser.parse(
+                "MATCH (kpi:KPI2)<-[:KPI2FromLTP]-(ltp:LTP)<-[:NEHasLtps]-(ne:NetworkElement) RETURN kpi, ltp, ne");
+        ExecutionPlan plan = localRewriter.rewrite(program);
+
+        assertEquals(1, plan.getExternalQueries().size(), "应先生成独立外部查询");
+        ExternalQuery externalQuery = plan.getExternalQueries().get(0);
+        assertFalse(externalQuery.isDependsOnPhysicalQuery(), "第一跳虚拟边不应再依赖物理查询");
+        assertTrue(externalQuery.getOutputVariables().contains("kpi"), "外部查询应产出起始虚拟变量");
+        assertFalse(externalQuery.getOutputVariables().contains("ltp"), "第一跳外部查询不应错误产出物理变量");
+
+        assertEquals(1, plan.getPhysicalQueries().size(), "应生成依赖外部结果的物理查询");
+        PhysicalQuery physicalQuery = plan.getPhysicalQueries().get(0);
+        assertTrue(physicalQuery.isDependsOnExternalQuery(), "物理查询应依赖外部查询结果");
+        assertEquals("kpi", physicalQuery.getSourceVariableName(), "依赖源变量应为起始虚拟变量");
+        assertEquals("parentResId", physicalQuery.getDependencySourceField(), "依赖源字段应使用外部字段");
+        assertEquals("ltp", physicalQuery.getDependencyTargetVariable(), "应约束首个物理节点变量");
+        assertEquals("resId", physicalQuery.getDependencyTargetField(), "应约束物理侧映射字段");
+        assertTrue(physicalQuery.getCypher().contains("ltp.resId IN $ltp_resId_ids"), "物理查询应注入外部依赖条件");
     }
 }

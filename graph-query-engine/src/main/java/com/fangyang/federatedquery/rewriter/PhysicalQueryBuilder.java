@@ -96,14 +96,62 @@ public class PhysicalQueryBuilder {
             whereClause.append(c.toCypher());
         }
 
-        String cypher = query.getCypher();
-        if (cypher != null && !cypher.contains("WHERE")) {
-            int returnIdx = cypher.toUpperCase().indexOf("RETURN");
-            if (returnIdx > 0) {
-                cypher = cypher.substring(0, returnIdx) + "WHERE " + whereClause + " " + cypher.substring(returnIdx);
-                query.setCypher(cypher);
-            }
+        appendWhereClause(query, whereClause.toString());
+    }
+
+    public void applyDependentInputCondition(
+            PhysicalQuery query,
+            String sourceVariable,
+            String sourceField,
+            String targetVariable,
+            String targetField) {
+        if (query == null || targetVariable == null || targetVariable.isEmpty()
+                || targetField == null || targetField.isEmpty()) {
+            return;
         }
+
+        String parameterName = buildDependencyParameterName(targetVariable, targetField);
+        appendWhereClause(query, buildFieldReference(targetVariable, targetField) + " IN $" + parameterName);
+        query.setDependsOnExternalQuery(true);
+        query.setSourceVariableName(sourceVariable);
+        query.setDependencySourceField(sourceField);
+        query.setDependencyTargetVariable(targetVariable);
+        query.setDependencyTargetField(targetField);
+        query.setDependencyParameterName(parameterName);
+    }
+
+    private void appendWhereClause(PhysicalQuery query, String clause) {
+        if (query == null || clause == null || clause.isEmpty()) {
+            return;
+        }
+        String cypher = query.getCypher();
+        if (cypher == null || cypher.isEmpty()) {
+            return;
+        }
+
+        int returnIdx = cypher.toUpperCase().indexOf("RETURN");
+        if (returnIdx <= 0) {
+            return;
+        }
+
+        if (cypher.toUpperCase().contains("WHERE")) {
+            cypher = cypher.substring(0, returnIdx) + "AND " + clause + " " + cypher.substring(returnIdx);
+        } else {
+            cypher = cypher.substring(0, returnIdx) + "WHERE " + clause + " " + cypher.substring(returnIdx);
+        }
+        query.setCypher(cypher);
+    }
+
+    private String buildFieldReference(String variable, String field) {
+        if ("_id".equals(field)) {
+            return "id(" + variable + ")";
+        }
+        return variable + "." + field;
+    }
+
+    private String buildDependencyParameterName(String variable, String field) {
+        String normalizedField = field.replaceAll("[^A-Za-z0-9_]", "_");
+        return variable + "_" + normalizedField + "_ids";
     }
 
     private String buildNodePattern(String variable, List<String> labels, Map<String, Object> properties) {

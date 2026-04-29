@@ -93,14 +93,19 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     }
     
     private void visitOC_SinglePartQuery(LcypherParser.OC_SinglePartQueryContext ctx, Statement.SingleQuery singleQuery) {
+        if (!ctx.oC_UpdatingClause().isEmpty()) {
+            throw new SyntaxErrorException("Write clauses are not supported");
+        }
         for (LcypherParser.OC_ReadingClauseContext readingCtx : ctx.oC_ReadingClause()) {
             if (readingCtx.oC_Match() != null) {
                 MatchClause match = visitOC_Match(readingCtx.oC_Match());
                 singleQuery.getMatchClauses().add(match);
             }
             if (readingCtx.oC_Unwind() != null) {
-                UnwindClause unwind = visitOC_Unwind(readingCtx.oC_Unwind());
-                singleQuery.addUnwindClause(unwind);
+                throw new SyntaxErrorException("UNWIND is not supported");
+            }
+            if (readingCtx.oC_InQueryCall() != null) {
+                throw new SyntaxErrorException("CALL is not supported");
             }
         }
         
@@ -110,6 +115,9 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     }
     
     private void visitOC_MultiPartQuery(LcypherParser.OC_MultiPartQueryContext ctx, Statement.SingleQuery singleQuery) {
+        if (!ctx.oC_UpdatingClause().isEmpty()) {
+            throw new SyntaxErrorException("Write clauses are not supported");
+        }
         List<LcypherParser.OC_ReadingClauseContext> allReadingClauses = new ArrayList<>();
         List<LcypherParser.OC_WithContext> withClauses = new ArrayList<>();
         List<LcypherParser.OC_WhereContext> withWhereClauses = new ArrayList<>();
@@ -174,7 +182,7 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
             }
             
             if (returnBodyCtx.oC_Skip() != null) {
-                withClause.setSkipClause(visitOC_Skip(returnBodyCtx.oC_Skip()));
+                throw new SyntaxErrorException("SKIP is not supported");
             }
             
             if (returnBodyCtx.oC_Limit() != null) {
@@ -221,8 +229,11 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     
     @Override
     public MatchClause visitOC_Match(LcypherParser.OC_MatchContext ctx) {
+        if (ctx.OPTIONAL_() != null) {
+            throw new SyntaxErrorException("OPTIONAL MATCH is not supported");
+        }
         MatchClause match = new MatchClause();
-        match.setOptional(ctx.OPTIONAL_() != null);
+        match.setOptional(false);
         match.setPattern(visitOC_Pattern(ctx.oC_Pattern()));
         
         if (ctx.oC_Where() != null) {
@@ -233,10 +244,7 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     }
     
     public UnwindClause visitOC_Unwind(LcypherParser.OC_UnwindContext ctx) {
-        UnwindClause unwind = new UnwindClause();
-        unwind.setExpression(visitOC_Expression(ctx.oC_Expression()));
-        unwind.setVariable(ctx.oC_Variable().getText());
-        return unwind;
+        throw new SyntaxErrorException("UNWIND is not supported");
     }
     
     @Override
@@ -344,6 +352,10 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
                     rel.addRelationshipType(typeCtx.getText());
                 }
             }
+
+            if (detailCtx.oC_RangeLiteral() != null) {
+                throw new SyntaxErrorException("Variable-length paths are not supported");
+            }
             
             if (detailCtx.oC_Properties() != null && detailCtx.oC_Properties().oC_MapLiteral() != null) {
                 Map<String, Object> props = visitMapLiteral(detailCtx.oC_Properties().oC_MapLiteral());
@@ -401,7 +413,7 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
         }
         
         if (bodyCtx.oC_Skip() != null) {
-            returnClause.setSkipClause(visitOC_Skip(bodyCtx.oC_Skip()));
+            throw new SyntaxErrorException("SKIP is not supported");
         }
         
         if (bodyCtx.oC_Limit() != null) {
@@ -475,6 +487,9 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     
     @Override
     public Expression visitOC_XorExpression(LcypherParser.OC_XorExpressionContext ctx) {
+        if (ctx.oC_AndExpression().size() > 1) {
+            throw new SyntaxErrorException("XOR is not supported");
+        }
         List<LcypherParser.OC_AndExpressionContext> andCtxs = ctx.oC_AndExpression();
         
         if (andCtxs.size() == 1) {
@@ -552,6 +567,9 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     
     @Override
     public Expression visitOC_AddOrSubtractExpression(LcypherParser.OC_AddOrSubtractExpressionContext ctx) {
+        if (ctx.oC_MultiplyDivideModuloExpression().size() > 1) {
+            throw new SyntaxErrorException("Arithmetic expressions are not supported");
+        }
         List<LcypherParser.OC_MultiplyDivideModuloExpressionContext> multCtxs = ctx.oC_MultiplyDivideModuloExpression();
         
         if (multCtxs.size() == 1) {
@@ -574,6 +592,9 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     
     @Override
     public Expression visitOC_MultiplyDivideModuloExpression(LcypherParser.OC_MultiplyDivideModuloExpressionContext ctx) {
+        if (ctx.oC_PowerOfExpression().size() > 1) {
+            throw new SyntaxErrorException("Arithmetic expressions are not supported");
+        }
         List<LcypherParser.OC_PowerOfExpressionContext> powerCtxs = ctx.oC_PowerOfExpression();
         
         if (powerCtxs.size() == 1) {
@@ -596,6 +617,9 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     
     @Override
     public Expression visitOC_PowerOfExpression(LcypherParser.OC_PowerOfExpressionContext ctx) {
+        if (ctx.oC_UnaryAddOrSubtractExpression().size() > 1) {
+            throw new SyntaxErrorException("Arithmetic expressions are not supported");
+        }
         List<LcypherParser.OC_UnaryAddOrSubtractExpressionContext> unaryCtxs = ctx.oC_UnaryAddOrSubtractExpression();
         
         if (unaryCtxs.size() == 1) {
@@ -617,6 +641,9 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     
     @Override
     public Expression visitOC_UnaryAddOrSubtractExpression(LcypherParser.OC_UnaryAddOrSubtractExpressionContext ctx) {
+        if (ctx.getChildCount() > 1) {
+            throw new SyntaxErrorException("Arithmetic expressions are not supported");
+        }
         return visitOC_StringListNullOperatorExpression(ctx.oC_StringListNullOperatorExpression());
     }
     
@@ -636,7 +663,7 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
             } else if (stringOpCtx.CONTAINS() != null) {
                 operator = "CONTAINS";
             } else if (stringOpCtx.REGEXP() != null) {
-                operator = "REGEXP";
+                throw new SyntaxErrorException("REGEXP is not supported");
             } else {
                 operator = "=";
             }
@@ -653,6 +680,8 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
                 comparison.setOperator("IN");
                 comparison.setRight(visitOC_PropertyOrLabelsExpression(listOpCtx.oC_PropertyOrLabelsExpression()));
                 left = comparison;
+            } else {
+                throw new SyntaxErrorException("List indexing is not supported");
             }
         }
         
@@ -693,6 +722,12 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
         if (ctx.oC_Parameter() != null) {
             return visitOC_Parameter(ctx.oC_Parameter());
         }
+        if (ctx.COUNT() != null) {
+            FunctionCall countAll = new FunctionCall();
+            countAll.setFunctionName("count");
+            countAll.addArgument(new Variable("*"));
+            return countAll;
+        }
         if (ctx.oC_FunctionInvocation() != null) {
             return visitOC_FunctionInvocation(ctx.oC_FunctionInvocation());
         }
@@ -702,8 +737,8 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
         if (ctx.oC_ParenthesizedExpression() != null) {
             return visitOC_ParenthesizedExpression(ctx.oC_ParenthesizedExpression());
         }
-        
-        return new Literal(null);
+
+        throw new SyntaxErrorException("Unsupported expression");
     }
     
     @Override
@@ -786,6 +821,14 @@ public class CypherASTVisitor extends LcypherBaseVisitor<AstNode> {
     public Expression visitOC_FunctionInvocation(LcypherParser.OC_FunctionInvocationContext ctx) {
         FunctionCall func = new FunctionCall();
         func.setFunctionName(ctx.oC_FunctionName().getText());
+        String functionName = func.getFunctionName().toLowerCase();
+        if (!"count".equals(functionName)
+                && !"sum".equals(functionName)
+                && !"avg".equals(functionName)
+                && !"min".equals(functionName)
+                && !"max".equals(functionName)) {
+            throw new SyntaxErrorException("Unsupported function: " + func.getFunctionName());
+        }
         func.setDistinct(ctx.DISTINCT() != null);
         
         for (LcypherParser.OC_ExpressionContext exprCtx : ctx.oC_Expression()) {

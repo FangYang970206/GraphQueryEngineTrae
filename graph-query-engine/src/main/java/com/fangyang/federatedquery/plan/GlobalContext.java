@@ -20,8 +20,9 @@ public class GlobalContext {
     private ProjectBy projectBy;
     private UsingSnapshot usingSnapshot;
     private List<String> withVariables = new ArrayList<>();
-    private int implicitLimit = 5000;
+    private int implicitLimit = -1;
     private boolean hasImplicitLimit = false;
+    private int maxResultSize = 8000;
     
     public void addBinding(String variable, Object value) {
         this.bindings.put(variable, value);

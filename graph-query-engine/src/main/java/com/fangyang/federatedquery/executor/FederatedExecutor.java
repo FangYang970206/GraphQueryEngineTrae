@@ -78,17 +78,20 @@ public class FederatedExecutor {
 
     public CompletableFuture<ExecutionResult> execute(ExecutionPlan plan) {
         ExecutionResult result = initializeResult(plan);
+        List<PhysicalQuery> independentPhysicalQueries = extractIndependentPhysicalQueries(plan);
+        List<PhysicalQuery> dependentPhysicalQueries = extractDependentPhysicalQueries(plan);
         List<ExternalQuery> independentQueries = extractIndependentQueries(plan);
         List<ExternalQuery> dependentQueries = extractDependentQueries(plan);
 
-        if (dependentQueries.isEmpty()) {
-            return executeAllInParallel(plan, result, plan.getPhysicalQueries(), independentQueries);
+        if (dependentQueries.isEmpty() && dependentPhysicalQueries.isEmpty()) {
+            return executeAllInParallel(plan, result, independentPhysicalQueries, independentQueries);
         }
 
         return executeWithDependencyAwareness(
                 plan,
                 result,
-                plan.getPhysicalQueries(),
+                independentPhysicalQueries,
+                dependentPhysicalQueries,
                 independentQueries,
                 dependentQueries
         );
@@ -109,18 +112,52 @@ public class FederatedExecutor {
     private CompletableFuture<ExecutionResult> executeWithDependencyAwareness(
             ExecutionPlan plan,
             ExecutionResult result,
-            List<PhysicalQuery> physicalQueries,
+            List<PhysicalQuery> independentPhysicalQueries,
+            List<PhysicalQuery> dependentPhysicalQueries,
             List<ExternalQuery> independentQueries,
             List<ExternalQuery> dependentQueries) {
-        List<CompletableFuture<QueryResult>> physicalFutures = schedulePhysicalQueries(physicalQueries, result);
+        List<CompletableFuture<QueryResult>> physicalFutures = schedulePhysicalQueries(independentPhysicalQueries, result);
         List<CompletableFuture<QueryResult>> independentFutures = scheduleIndependentQueries(independentQueries, result);
+        CompletableFuture<Void> dependentPhysicalFuture = allOf(independentFutures)
+                .thenComposeAsync(ignored -> executeDependentPhysicalQueries(dependentPhysicalQueries, result),
+                        executionRuntime.executor());
+        CompletableFuture<Void> allPhysicalFuture = CompletableFuture.allOf(allOf(physicalFutures), dependentPhysicalFuture);
 
-        return allOf(physicalFutures)
+        return allPhysicalFuture
                 .thenComposeAsync(ignored -> executeDependentQueries(dependentQueries, independentFutures, result),
                         executionRuntime.executor())
                 .thenComposeAsync(ignored -> allOf(scheduleUnionQueries(plan.getUnionParts(), result)),
                         executionRuntime.executor())
                 .thenApplyAsync(ignored -> markExecutionSuccess(result), executionRuntime.executor());
+    }
+
+    private CompletableFuture<Void> executeDependentPhysicalQueries(
+            List<PhysicalQuery> dependentPhysicalQueries,
+            ExecutionResult result) {
+        if (dependentPhysicalQueries == null || dependentPhysicalQueries.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        log.debug("External queries completed, extracting IDs for dependent physical queries");
+
+        Map<String, Map<String, Set<String>>> dataByVariable =
+                dependencyResolver.extractIdsAndPropertiesFromExternalResults(result);
+        dependencyResolver.populateDependentPhysicalQueryInputIds(dependentPhysicalQueries, dataByVariable);
+
+        DependencyResolver.PhysicalDependencyClassification classification =
+                dependencyResolver.classifyDependentPhysicalQueries(dependentPhysicalQueries);
+
+        for (PhysicalQuery query : classification.getNotReadyQueries()) {
+            log.debug("Physical query {} is not ready to execute - no input IDs available, returning empty result",
+                    query.getId());
+            result.addPhysicalResult(query.getId(), new QueryResult());
+        }
+
+        List<CompletableFuture<QueryResult>> futures = new ArrayList<>();
+        for (PhysicalQuery query : classification.getReadyQueries()) {
+            futures.add(scheduleDependentPhysicalQuery(query, result));
+        }
+        return allOf(futures);
     }
 
     private CompletableFuture<Void> executeDependentQueries(
@@ -202,6 +239,14 @@ public class FederatedExecutor {
         }, executionRuntime.executor());
     }
 
+    private CompletableFuture<QueryResult> scheduleDependentPhysicalQuery(PhysicalQuery query, ExecutionResult result) {
+        return queryExecutionGateway.executePhysical(query).thenApplyAsync(queryResult -> {
+            QueryResult enriched = resultEnricher.enrichPhysicalResultWithSourceRows(query, queryResult, result);
+            result.addPhysicalResult(query.getId(), enriched);
+            return enriched;
+        }, executionRuntime.executor());
+    }
+
     private CompletableFuture<QueryResult> scheduleBatchQuery(BatchRequest batch, ExecutionResult result) {
         return queryExecutionGateway.executeBatch(batch).thenApplyAsync(batchResult -> {
             result.addBatchResult(batch.getId(), batchResult);
@@ -228,6 +273,18 @@ public class FederatedExecutor {
     private List<ExternalQuery> extractDependentQueries(ExecutionPlan plan) {
         return plan.getExternalQueries().stream()
                 .filter(ExternalQuery::isDependsOnPhysicalQuery)
+                .collect(Collectors.toList());
+    }
+
+    private List<PhysicalQuery> extractIndependentPhysicalQueries(ExecutionPlan plan) {
+        return plan.getPhysicalQueries().stream()
+                .filter(query -> !query.isDependsOnExternalQuery())
+                .collect(Collectors.toList());
+    }
+
+    private List<PhysicalQuery> extractDependentPhysicalQueries(ExecutionPlan plan) {
+        return plan.getPhysicalQueries().stream()
+                .filter(PhysicalQuery::isDependsOnExternalQuery)
                 .collect(Collectors.toList());
     }
 

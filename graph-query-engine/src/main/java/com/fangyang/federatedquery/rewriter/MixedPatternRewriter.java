@@ -33,16 +33,6 @@ public class MixedPatternRewriter {
 
         if (!virtualEdges.isEmpty()) {
             for (VirtualEdgeDetector.VirtualEdgePart ve : virtualEdges) {
-                if (ve.isFirstHop()) {
-                    PhysicalQuery startQuery = physicalQueryBuilder.createStartNodeQuery(ve.getStartNode());
-                    if (startQuery != null) {
-                        if (pushdownResult != null) {
-                            physicalQueryBuilder.applyPhysicalConditions(startQuery, pushdownResult.getPhysicalConditions());
-                        }
-                        plan.addPhysicalQuery(startQuery);
-                    }
-                }
-
                 ExternalQuery extQuery = createExternalQuery(ve, plan);
                 if (pushdownResult != null) {
                     applyVirtualConditionsToExternalQuery(extQuery, pushdownResult.getVirtualConditions());
@@ -61,11 +51,15 @@ public class MixedPatternRewriter {
                 if (pushdownResult != null) {
                     physicalQueryBuilder.applyPhysicalConditions(physicalQuery, pushdownResult.getPhysicalConditions());
                 }
+                applyFirstHopDependency(physicalQuery, virtualEdges);
                 plan.addPhysicalQuery(physicalQuery);
             }
         }
 
         for (VirtualEdgeDetector.VirtualNodePart vn : virtualNodes) {
+            if (isCoveredByVirtualEdge(vn, virtualEdges)) {
+                continue;
+            }
             ExternalQuery nodeQuery = createVirtualNodeQuery(vn, plan);
             if (pushdownResult != null) {
                 applyVirtualConditionsToExternalQuery(nodeQuery, pushdownResult.getVirtualConditions());
@@ -87,7 +81,15 @@ public class MixedPatternRewriter {
             query.setTargetLabel(b.getTargetLabel());
         });
 
-        if (ve.getStartNode() != null && ve.getStartNode().getVariable() != null) {
+        if (ve.isFirstHop()) {
+            if (ve.getStartNode() != null && ve.getStartNode().getVariable() != null) {
+                query.setSourceVariableName(ve.getStartNode().getVariable());
+            }
+            if (ve.getIdMapping() != null && !ve.getIdMapping().isEmpty()) {
+                Map.Entry<String, String> firstMapping = ve.getIdMapping().entrySet().iterator().next();
+                query.setOutputIdField(firstMapping.getValue());
+            }
+        } else if (ve.getStartNode() != null && ve.getStartNode().getVariable() != null) {
             String sourceVar = ve.getStartNode().getVariable();
             query.setSourceVariableName(sourceVar);
             query.setDependsOnPhysicalQuery(true);
@@ -102,13 +104,70 @@ public class MixedPatternRewriter {
         if (ve.getVariable() != null) {
             query.addOutputVariable(ve.getVariable());
         }
-        if (ve.getEndNode() != null && ve.getEndNode().getVariable() != null) {
+        if (ve.isFirstHop()) {
+            if (ve.getStartNode() != null && ve.getStartNode().getVariable() != null) {
+                query.addOutputVariable(ve.getStartNode().getVariable());
+            }
+        } else if (ve.getEndNode() != null && ve.getEndNode().getVariable() != null) {
             query.addOutputVariable(ve.getEndNode().getVariable());
         }
 
         applySnapshotToQuery(query, plan);
 
         return query;
+    }
+
+    private void applyFirstHopDependency(
+            PhysicalQuery physicalQuery,
+            List<VirtualEdgeDetector.VirtualEdgePart> virtualEdges) {
+        if (physicalQuery == null || virtualEdges == null || virtualEdges.isEmpty()) {
+            return;
+        }
+
+        for (VirtualEdgeDetector.VirtualEdgePart ve : virtualEdges) {
+            if (!ve.isFirstHop() || ve.getIdMapping() == null || ve.getIdMapping().isEmpty()) {
+                continue;
+            }
+            if (ve.getStartNode() == null || ve.getEndNode() == null || ve.getEndNode().getVariable() == null) {
+                continue;
+            }
+
+            Map.Entry<String, String> firstMapping = ve.getIdMapping().entrySet().iterator().next();
+            physicalQueryBuilder.applyDependentInputCondition(
+                    physicalQuery,
+                    ve.getStartNode().getVariable(),
+                    firstMapping.getValue(),
+                    ve.getEndNode().getVariable(),
+                    firstMapping.getKey());
+            return;
+        }
+    }
+
+    private boolean isCoveredByVirtualEdge(
+            VirtualEdgeDetector.VirtualNodePart virtualNode,
+            List<VirtualEdgeDetector.VirtualEdgePart> virtualEdges) {
+        if (virtualNode == null || virtualEdges == null || virtualEdges.isEmpty()) {
+            return false;
+        }
+        for (VirtualEdgeDetector.VirtualEdgePart edge : virtualEdges) {
+            if (matchesVirtualNode(virtualNode, edge.getStartNode())) {
+                return true;
+            }
+            if (matchesVirtualNode(virtualNode, edge.getEndNode())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesVirtualNode(VirtualEdgeDetector.VirtualNodePart virtualNode, NodePattern nodePattern) {
+        if (virtualNode == null || nodePattern == null) {
+            return false;
+        }
+        if (!Objects.equals(virtualNode.getVariable(), nodePattern.getVariable())) {
+            return false;
+        }
+        return nodePattern.getLabels().contains(virtualNode.getLabel());
     }
 
     private ExternalQuery createVirtualNodeQuery(VirtualEdgeDetector.VirtualNodePart vn, ExecutionPlan plan) {

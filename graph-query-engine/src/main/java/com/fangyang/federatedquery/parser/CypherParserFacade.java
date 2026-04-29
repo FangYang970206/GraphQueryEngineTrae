@@ -4,6 +4,7 @@ import com.fangyang.federatedquery.ast.Program;
 import com.fangyang.federatedquery.exception.SyntaxErrorException;
 import com.fangyang.federatedquery.grammar.LcypherLexer;
 import com.fangyang.federatedquery.grammar.LcypherParser;
+import com.fangyang.federatedquery.validation.ScopeValidator;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.antlr.v4.runtime.CharStreams;
@@ -20,6 +21,8 @@ import java.util.concurrent.TimeUnit;
 public class CypherParserFacade {
     @Autowired
     private CypherASTVisitor astVisitor;
+    @Autowired(required = false)
+    private ScopeValidator scopeValidator;
     private final Cache<String, Program> planCache;
 
     public CypherParserFacade() {
@@ -31,8 +34,13 @@ public class CypherParserFacade {
     }
 
     public CypherParserFacade(CypherASTVisitor astVisitor) {
+        this(astVisitor, null);
+    }
+
+    public CypherParserFacade(CypherASTVisitor astVisitor, ScopeValidator scopeValidator) {
         this();
         this.astVisitor = astVisitor;
+        this.scopeValidator = scopeValidator;
     }
     
     public Program parse(String cypher) {
@@ -48,7 +56,11 @@ public class CypherParserFacade {
             parser.addErrorListener(new SyntaxErrorListener());
             
             LcypherParser.OC_CypherContext ctx = parser.oC_Cypher();
-            return astVisitor.visitOC_Cypher(ctx);
+            Program program = astVisitor.visitOC_Cypher(ctx);
+            if (scopeValidator != null) {
+                scopeValidator.validate(program);
+            }
+            return program;
         } catch (ParseCancellationException e) {
             throw new SyntaxErrorException("Failed to parse Cypher: " + e.getMessage(), e);
         }

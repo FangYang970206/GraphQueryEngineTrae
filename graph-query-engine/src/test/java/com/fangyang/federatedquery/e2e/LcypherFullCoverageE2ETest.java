@@ -57,8 +57,8 @@ class LcypherFullCoverageE2ETest {
     }
 
     @Test
-    @DisplayName("WHERE + ORDER BY + SKIP + LIMIT: deterministic semantics")
-    void whereOrderSkipLimitSemantics() throws Exception {
+    @DisplayName("WHERE + ORDER BY + LIMIT: deterministic semantics")
+    void whereOrderLimitSemantics() throws Exception {
         GraphEntity ne1 = node("ne1", "NetworkElement", "n");
         ne1.setProperty("name", "NE001");
         GraphEntity ne2 = node("ne2", "NetworkElement", "n");
@@ -67,11 +67,11 @@ class LcypherFullCoverageE2ETest {
         ne3.setProperty("name", "NE003");
         tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne1).addEntity(ne2).addEntity(ne3));
 
-        JsonNode json = JsonUtil.readTree(sdk.execute("MATCH (n:NetworkElement) WHERE n.name >= 'NE001' RETURN n ORDER BY n.name DESC SKIP 1 LIMIT 1"));
+        JsonNode json = JsonUtil.readTree(sdk.execute("MATCH (n:NetworkElement) WHERE n.name >= 'NE001' RETURN n ORDER BY n.name DESC LIMIT 1"));
         assertTrue(json.isArray(), "Result must be an array");
         assertEquals(1, json.size(), "Pagination must return exactly one row");
         JsonNode n = json.get(0).get("n");
-        assertEquals("NE002", n.get("name").asText(), "Ordering + skip must return NE002");
+        assertEquals("NE003", n.get("name").asText(), "Ordering + limit must return NE003");
     }
 
     @Test
@@ -153,80 +153,24 @@ class LcypherFullCoverageE2ETest {
     }
 
     @Test
-    @DisplayName("Mixed data sources: physical + virtual KPI edge")
-    void mixedDataSourceKpiEdgeSemantics() throws Exception {
-        GraphEntity ne = node("ne1", "NetworkElement", "ne");
-        ne.setProperty("name", "NE001");
-        GraphEntity kpi = node("kpi1", "KPI", "kpi");
-        kpi.setProperty("name", "cpu_usage");
-        kpi.setProperty("value", 95.0);
-
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
-        kpiAdapter.registerResponse("getKPIByNeIds", MockExternalAdapter.MockResponse.create().addEntity(kpi));
-
-        JsonNode json = JsonUtil.readTree(sdk.execute("MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) RETURN ne, kpi"));
-        assertTrue(json.isArray(), "Result must be an array");
-        assertEquals(1, json.size(), "Result must contain 1 row");
-        JsonNode row = json.get(0);
-        assertEquals("NetworkElement", row.get("ne").get("label").asText(), "ne.label must match");
-        assertEquals("KPI", row.get("kpi").get("label").asText(), "kpi.label must match");
-        assertEquals("cpu_usage", row.get("kpi").get("name").asText(), "kpi.name must match");
+    @DisplayName("Single-hop virtual edge is rejected")
+    void mixedDataSourceKpiEdgeSemantics() {
+        assertThrows(com.fangyang.federatedquery.exception.GraphQueryException.class,
+                () -> sdk.execute("MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi:KPI) RETURN ne, kpi"));
     }
 
     @Test
-    @DisplayName("Mixed data sources: multiple virtual edges with UNION ALL")
-    void mixedDataSourceUnionAllSemantics() throws Exception {
-        GraphEntity ne = node("ne1", "NetworkElement", "ne");
-        ne.setProperty("name", "NE001");
-        GraphEntity kpi = node("kpi1", "KPI", "target");
-        kpi.setProperty("name", "cpu_usage");
-        GraphEntity alarm = node("alarm1", "Alarm", "target");
-        alarm.setProperty("severity", "critical");
-
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
-        kpiAdapter.registerResponse("getKPIByNeIds", MockExternalAdapter.MockResponse.create().addEntity(kpi));
-        alarmAdapter.registerResponse("getAlarmsByNeIds", MockExternalAdapter.MockResponse.create().addEntity(alarm));
-
-        String q = "MATCH (ne:NetworkElement)-[:NEHasKPI]->(target) RETURN target UNION ALL MATCH (ne:NetworkElement)-[:NEHasAlarms]->(target) RETURN target";
-        JsonNode json = JsonUtil.readTree(sdk.execute(q));
-        assertTrue(json.isArray(), "Result must be an array");
-        assertEquals(2, json.size(), "UNION ALL across two data sources must return 2 rows");
-        Set<String> labels = new LinkedHashSet<>();
-        labels.add(json.get(0).get("target").get("label").asText());
-        labels.add(json.get(1).get("target").get("label").asText());
-        assertTrue(labels.contains("KPI"), "Result must contain KPI");
-        assertTrue(labels.contains("Alarm"), "Result must contain Alarm");
+    @DisplayName("UNION with unsupported virtual single-hop is rejected")
+    void mixedDataSourceUnionAllSemantics() {
+        String q = "MATCH (ne:NetworkElement)-[:NEHasKPI]->(target:KPI) RETURN target UNION ALL MATCH (ne:NetworkElement)-[:NEHasAlarms]->(target:Alarm) RETURN target";
+        assertThrows(com.fangyang.federatedquery.exception.GraphQueryException.class, () -> sdk.execute(q));
     }
 
     @Test
-    @DisplayName("Virtual edge query returns exact external rows")
-    void virtualConditionFilteringSemantics() throws Exception {
-        GraphEntity ne = node("ne1", "NetworkElement", "ne");
-        ne.setProperty("name", "NE001");
-        GraphEntity kpiHigh = node("kpi1", "KPI", "kpi");
-        kpiHigh.setProperty("value", 95.0);
-        GraphEntity kpiLow = node("kpi2", "KPI", "kpi");
-        kpiLow.setProperty("value", 75.0);
-
-        tugraphAdapter.registerResponse("cypher", MockExternalAdapter.MockResponse.create().addEntity(ne));
-        kpiAdapter.registerResponse("getKPIByNeIds", MockExternalAdapter.MockResponse.create().generator(query -> {
-            List<GraphEntity> all = new ArrayList<>();
-            all.add(kpiHigh);
-            all.add(kpiLow);
-            if (!query.getFilterConditions().isEmpty()
-                    && "value".equals(query.getFilterConditions().get(0).getKey())
-                    && ">".equals(query.getFilterConditions().get(0).getOperator())
-                    && query.getFilterConditions().get(0).getValue() instanceof Number
-                    && ((Number) query.getFilterConditions().get(0).getValue()).doubleValue() == 90.0) {
-                return List.of(kpiHigh);
-            }
-            return all;
-        }));
-
-        JsonNode json = JsonUtil.readTree(sdk.execute("MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi) WHERE kpi.value > 90 RETURN ne, kpi"));
-        assertTrue(json.isArray(), "Result must be an array");
-        assertEquals(1, json.size(), "应只返回满足 > 90 的 KPI 记录");
-        assertEquals(95.0, json.get(0).get("kpi").get("value").asDouble(), "应只保留 95.0 这条 KPI");
+    @DisplayName("Virtual edge filtering on unsupported single-hop is rejected")
+    void virtualConditionFilteringSemantics() {
+        assertThrows(com.fangyang.federatedquery.exception.GraphQueryException.class,
+                () -> sdk.execute("MATCH (ne:NetworkElement)-[:NEHasKPI]->(kpi:KPI) WHERE kpi.value > 90 RETURN ne, kpi"));
     }
 
     private GraphEntity node(String id, String label, String variableName) {

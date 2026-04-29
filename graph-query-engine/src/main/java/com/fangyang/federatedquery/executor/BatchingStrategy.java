@@ -8,8 +8,6 @@ import com.fangyang.federatedquery.plan.ExternalQuery;
 import java.util.*;
 
 public class BatchingStrategy {
-    private int maxBatchSize = 1000;
-    
     public List<BatchRequest> batch(List<ExternalQuery> queries) {
         Map<String, List<ExternalQuery>> grouped = new HashMap<>();
         
@@ -57,42 +55,19 @@ public class BatchingStrategy {
             outputFields = new ArrayList<>(new LinkedHashSet<>(outputFields));
             outputVariables = new ArrayList<>(new LinkedHashSet<>(outputVariables));
             
-            int totalSize = allInputIds.size();
-            if (totalSize == 0) {
-                BatchRequest batch = new BatchRequest();
-                batch.setId(UUID.randomUUID().toString());
-                batch.setDataSource(dataSource);
-                batch.setOperator(operator);
-                batch.setInputIds(new ArrayList<>());
-                batch.setInputIdField(inputIdField);
-                batch.setOutputIdField(outputIdField);
-                batch.setOutputFields(new ArrayList<>(outputFields));
-                batch.setOutputVariables(new ArrayList<>(outputVariables));
-                batch.setFilters(new LinkedHashMap<>(filters));
-                batch.setFilterConditions(new ArrayList<>(filterConditions));
-                batch.setOriginalQueries(groupQueries);
-                batches.add(batch);
-            } else {
-                for (int i = 0; i < totalSize; i += maxBatchSize) {
-                    int end = Math.min(i + maxBatchSize, totalSize);
-                    List<String> batchIds = allInputIds.subList(i, end);
-                    
-                    BatchRequest batch = new BatchRequest();
-                    batch.setId(UUID.randomUUID().toString());
-                    batch.setDataSource(dataSource);
-                    batch.setOperator(operator);
-                    batch.setInputIds(new ArrayList<>(batchIds));
-                    batch.setInputIdField(inputIdField);
-                    batch.setOutputIdField(outputIdField);
-                    batch.setOutputFields(new ArrayList<>(outputFields));
-                    batch.setOutputVariables(new ArrayList<>(outputVariables));
-                    batch.setFilters(new LinkedHashMap<>(filters));
-                    batch.setFilterConditions(new ArrayList<>(filterConditions));
-                    batch.setOriginalQueries(groupQueries);
-                    
-                    batches.add(batch);
-                }
-            }
+            BatchRequest batch = new BatchRequest();
+            batch.setId(UUID.randomUUID().toString());
+            batch.setDataSource(dataSource);
+            batch.setOperator(operator);
+            batch.setInputIds(new ArrayList<>(new LinkedHashSet<>(allInputIds)));
+            batch.setInputIdField(inputIdField);
+            batch.setOutputIdField(outputIdField);
+            batch.setOutputFields(new ArrayList<>(outputFields));
+            batch.setOutputVariables(new ArrayList<>(outputVariables));
+            batch.setFilters(new LinkedHashMap<>(filters));
+            batch.setFilterConditions(new ArrayList<>(filterConditions));
+            batch.setOriginalQueries(groupQueries);
+            batches.add(batch);
         }
         
         return batches;
@@ -253,13 +228,5 @@ public class BatchingStrategy {
             }
         }
         return buckets;
-    }
-    
-    public int getMaxBatchSize() {
-        return maxBatchSize;
-    }
-    
-    public void setMaxBatchSize(int maxBatchSize) {
-        this.maxBatchSize = maxBatchSize;
     }
 }

@@ -12,6 +12,9 @@ import java.util.*;
 
 @Component
 public class QueryRewriter {
+    private static final int DEFAULT_EXTERNAL_LIMIT = 1000;
+    private static final int DEFAULT_PHYSICAL_LIMIT = 5000;
+
     @Autowired
     private MetadataQueryService metadataQueryService;
     @Autowired
@@ -64,6 +67,7 @@ public class QueryRewriter {
         }
 
         extractProjectByInfo(query, statement, plan);
+        applyDefaultLimit(plan);
 
         return plan;
     }
@@ -195,14 +199,12 @@ public class QueryRewriter {
             plan.getGlobalContext().setGlobalOrder(orderSpec);
         }
 
-        GlobalContext.LimitSpec limitSpec = new GlobalContext.LimitSpec();
-        if (withClause.getSkipClause() != null) {
-            limitSpec.setSkip(withClause.getSkipClause().getSkipValue());
-        }
+        GlobalContext.LimitSpec limitSpec = null;
         if (withClause.getLimitClause() != null) {
+            limitSpec = new GlobalContext.LimitSpec();
             limitSpec.setLimit(withClause.getLimitClause().getLimitValue());
         }
-        if (withClause.getSkipClause() != null || withClause.getLimitClause() != null) {
+        if (limitSpec != null) {
             plan.getGlobalContext().setGlobalLimit(limitSpec);
         }
 
@@ -256,11 +258,6 @@ public class QueryRewriter {
     }
 
     private void applyPendingFilters(ExecutionPlan plan, WhereConditionPushdown.PushdownResult pushdownResult) {
-        for (WhereConditionPushdown.Condition physical : pushdownResult.getPhysicalConditions()) {
-            GlobalContext.WhereCondition validationCondition = convertToWhereCondition(physical);
-            validationCondition.setVirtual(false);
-            plan.getGlobalContext().addValidationFilter(validationCondition);
-        }
         for (WhereConditionPushdown.Condition postFilter : pushdownResult.getPostFilterConditions()) {
             plan.getGlobalContext().addPendingFilter(convertToWhereCondition(postFilter));
         }
@@ -292,18 +289,6 @@ public class QueryRewriter {
             }
             context.setGlobalLimit(limitSpec);
         }
-
-        if (returnClause.getSkipClause() != null) {
-            GlobalContext.LimitSpec limitSpec = context.getGlobalLimit();
-            if (limitSpec == null) {
-                limitSpec = new GlobalContext.LimitSpec();
-                context.setGlobalLimit(limitSpec);
-            }
-            Integer skip = returnClause.getSkipClause().getSkipValue();
-            if (skip != null) {
-                limitSpec.setSkip(skip);
-            }
-        }
     }
 
     private GlobalContext.OrderSpec convertOrderBy(OrderByClause orderByClause) {
@@ -332,5 +317,16 @@ public class QueryRewriter {
         GlobalContext.WhereCondition condition = new GlobalContext.WhereCondition();
         condition.setOriginalExpression(expression);
         plan.getGlobalContext().addPendingFilter(condition);
+    }
+
+    private void applyDefaultLimit(ExecutionPlan plan) {
+        if (plan.getGlobalContext().getGlobalLimit() != null
+                && plan.getGlobalContext().getGlobalLimit().getLimit() > 0) {
+            return;
+        }
+
+        int implicitLimit = plan.getExternalQueries().isEmpty() ? DEFAULT_PHYSICAL_LIMIT : DEFAULT_EXTERNAL_LIMIT;
+        plan.getGlobalContext().setImplicitLimit(implicitLimit);
+        plan.getGlobalContext().setHasImplicitLimit(true);
     }
 }
